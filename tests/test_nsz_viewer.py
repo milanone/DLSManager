@@ -258,7 +258,7 @@ class TestApplication(unittest.TestCase):
         self.app.notebook.select(self.app.tab_size)
         copy = self.app._copy_figure(self.app.fig_size)
         self.assertEqual(len(copy.axes), 2)
-        if nsz.origin_style is not None:
+        if nsz.psk is not None:
             w, h = copy.get_size_inches()
             self.assertAlmostEqual(w / h, 16 / 9, places=2)                    # two panels -> 'double' preset
         out = os.path.join(self.tmp.name, "f.fig.pickle")

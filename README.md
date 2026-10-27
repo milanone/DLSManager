@@ -28,8 +28,12 @@ exports everything to Excel.
   the intensity and number distributions and the parameters.
 - **Figures**: `File → Save Figure Image (PNG, PDF, SVG)...`, `Save Figure (pickle)...` and `Edit Figure...` work on the
   plot of the active tab (a copy restyled as an Origin-like figure with the shared
-  [PlotStyleKit](https://github.com/milanone/PlotStyleKit), which is also used for the on-screen plots when the repo is
-  next to this one).
+  [PlotStyleKit](https://github.com/milanone/PlotStyleKit), which is also used for the on-screen plots). PlotStyleKit is
+  optional: the program looks for it next to itself (`../PlotStyleKit`), in `~/progetti/PlotStyleKit`, in the folder
+  named by the environment variable `PLOTSTYLEKIT` and in the folder you chose the last time; if it finds none it says
+  so at start and asks for the folder, with *Cancel* for going without it (it will not ask again; *File >
+  PlotStyleKit...* changes that). Without it the plots keep a plain look with a dashed grid, *Save Figure* writes the
+  figure as drawn and *Edit Figure* offers to locate PlotStyleKit.
 
 ## Run
 

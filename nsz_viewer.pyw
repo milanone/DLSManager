@@ -32,26 +32,93 @@ except ImportError:
     DND_AVAILABLE = False
 
 
-def _load_origin_style():
-    """Load the shared Origin plot style (PlotStyleKit): a local copy first, then the sibling repo."""
+# ---- PlotStyleKit bootstrap: the same text in every program (PlotStyleKit/README.md, 'Using it from a program') ----
+import json
+import os
+
+PSK_MIN_API = 2
+PSK_CONFIG = os.path.join(os.path.expanduser('~'), '.plotstylekit.json')
+
+
+def _psk_config():
+    try:
+        with open(PSK_CONFIG, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _psk_save(**changes):
+    cfg = _psk_config()
+    cfg.update(changes)
+    try:
+        with open(PSK_CONFIG, 'w', encoding='utf-8') as f:
+            json.dump(cfg, f)
+    except OSError:
+        pass
+
+
+def _psk_try(folder, min_api):
+    """(module, problem): problem is None when plotstylekit.py in `folder` loads and is recent enough."""
     import importlib.util as ilu
+    path = os.path.join(folder, 'plotstylekit.py')
+    if not os.path.isfile(path):
+        return None, f"plotstylekit.py is not in {folder}"
+    try:
+        spec = ilu.spec_from_file_location('plotstylekit', path)
+        mod = ilu.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    except Exception as e:
+        return None, f"plotstylekit.py in {folder} cannot be loaded: {e}"
+    if getattr(mod, 'API', 0) < min_api:
+        return None, (f"PlotStyleKit in {folder} is too old for this program (API {getattr(mod, 'API', '?')}, "
+                      f"it needs {min_api}): update it")
+    return mod, None
+
+
+def _load_plotstylekit(min_api=PSK_MIN_API):
+    """(module, problem): the first usable PlotStyleKit, or None and a sentence saying what was wrong."""
     here = os.path.dirname(os.path.abspath(__file__))
-    for path in (os.path.join(here, 'origin_style.py'),
-                 os.path.join(here, '..', 'PlotStyleKit', 'origin_style.py')):
-        if os.path.isfile(path):
-            spec = ilu.spec_from_file_location('origin_style', path)
-            mod = ilu.module_from_spec(spec)
-            spec.loader.exec_module(mod)
+    folders = [here, os.environ.get('PLOTSTYLEKIT'), _psk_config().get('path'), os.path.join(here, '..', 'PlotStyleKit'),
+               os.path.expanduser(os.path.join('~', 'progetti', 'PlotStyleKit'))]
+    problem = "PlotStyleKit was not found (next to the program, PLOTSTYLEKIT, a folder you chose, ../PlotStyleKit)"
+    for folder in filter(None, folders):
+        if os.path.isfile(os.path.join(folder, 'plotstylekit.py')):
+            mod, why = _psk_try(folder, min_api)
+            if mod is not None:
+                return mod, None
+            problem = why
+    return None, problem
+
+
+def _ask_plotstylekit_folder(parent, problem, min_api=PSK_MIN_API):
+    """The warning that asks for the folder of PlotStyleKit. Returns the module, or None if the user cancels
+    (remembered: the program is not asked again) or closes the folder dialog (asked again next time)."""
+    from tkinter import filedialog, messagebox
+    while True:
+        if not messagebox.askokcancel(
+                "PlotStyleKit", problem + ".\n\nOK: choose the folder that contains plotstylekit.py.\n"
+                "Cancel: use the program without it (plain matplotlib look, no Edit Figure). You will not be asked "
+                "again; File > PlotStyleKit... lets you change your mind.", parent=parent):
+            _psk_save(declined=True)
+            return None
+        folder = filedialog.askdirectory(parent=parent, title="Folder of PlotStyleKit (contains plotstylekit.py)")
+        if not folder:
+            return None
+        mod, why = _psk_try(folder, min_api)
+        if mod is not None:
+            _psk_save(path=folder, declined=False)
             return mod
-    return None
+        problem = why
 
 
-try:
-    origin_style = _load_origin_style()
-    if origin_style is not None:
-        origin_style.applica_rcparams()
-except Exception:
-    origin_style = None
+psk, PSK_PROBLEM = _load_plotstylekit()
+if psk is not None:
+    try:
+        psk.setup()
+    except Exception as e:
+        psk, PSK_PROBLEM = None, f"PlotStyleKit failed to start: {e}"
+# ---- end of the PlotStyleKit bootstrap ----
 
 # ── Colour palette for multiple samples (used only without PlotStyleKit) ─────
 COLORS = ["#2563EB","#DC2626","#16A34A","#D97706","#7C3AED",
@@ -61,7 +128,7 @@ MAX_SAMPLES_SHOWN = len(COLORS)
 
 def sample_colors():
     """Colours for the overlaid samples: the Origin cycle (black first) if PlotStyleKit is loaded."""
-    if origin_style is not None:
+    if psk is not None:
         cycle = matplotlib.rcParams['axes.prop_cycle'].by_key().get('color')
         if cycle:
             return list(cycle)
@@ -226,11 +293,12 @@ class NSZViewer:
         self.root = root
         self.root.title("NSZ Viewer — Horiba SZ-100")
         self.root.geometry("1380x840")
+        if psk is None and not _psk_config().get('declined'):
+            self.root.after(400, lambda: self._offer_plotstylekit(PSK_PROBLEM))
         self.root.configure(bg="#F1F5F9")
 
         self.samples = {}   # path → data dict
         self.selected = []  # list of paths currently shown
-        self._pe_module = None   # plot_editor module (PlotStyleKit), loaded on first use
 
         self._build_menu()
         self._build_ui()
@@ -248,6 +316,7 @@ class NSZViewer:
         m.add_command(label="Save Figure Image (PNG, PDF, SVG)...", command=self.save_figure_image)
         m.add_command(label="Save Figure (pickle)...", command=self.save_figure_pickle)
         m.add_command(label="Edit Figure...", command=self.open_figure_editor)
+        m.add_command(label="PlotStyleKit...", command=self.plotstylekit_dialog)
         m.add_separator()
         m.add_command(label="Exit", command=self.root.destroy)
         bar.add_cascade(label="File", menu=m)
@@ -526,13 +595,13 @@ class NSZViewer:
     def _style_figure(self, fig):
         """Apply the shared Origin style to every axes of `fig`, then enlarge the fonts for the on-screen
         pane (the 8-9 pt paper sizes look tiny when the plot fills the tab) and lay the figure out."""
-        if origin_style is None:
+        if psk is None:
             for ax in fig.axes:
                 ax.grid(True, which='both', alpha=0.3, linestyle='--')
             fig.tight_layout()
             return
         for ax in fig.axes:
-            origin_style.applica_stile_origin(ax, None, set_size=False)
+            psk.style(ax, None, set_size=False)
             ax.title.set_fontsize(11)
             ax.xaxis.label.set_fontsize(10)
             ax.yaxis.label.set_fontsize(10)
@@ -541,7 +610,7 @@ class NSZViewer:
             if leg is not None:
                 for t in leg.get_texts():
                     t.set_fontsize(9)
-        fig._editor_font_family = origin_style.font_origin()
+        fig._editor_font_family = psk.origin_style().font_origin()
         fig.tight_layout()
 
     # ── ACF plot ──────────────────────────────────────────────────────────────
@@ -947,15 +1016,17 @@ class NSZViewer:
             return self.fig_size
         return None
 
+    @staticmethod
+    def _preset_for(fig):
+        """'single' (4:3) for one panel, 'double' (16:9) for two."""
+        return 'single' if len(fig.axes) == 1 else 'double'
+
     def _copy_figure(self, fig):
-        """Copy of `fig` for saving/editor, restyled Origin: 'single' (4:3) for one panel, 'double' (16:9) for two."""
-        copy = pickle.loads(pickle.dumps(fig))
-        if origin_style is not None and copy.axes:
-            preset = 'single' if len(copy.axes) == 1 else 'double'
-            for ax in copy.axes[:-1]:
-                origin_style.applica_stile_origin(ax, None, set_size=False)
-            origin_style.applica_stile_origin(copy.axes[-1], copy, set_size=True, preset=preset)
-        return copy
+        """Copy of `fig` for saving/editor, restyled Origin by PlotStyleKit when it is in use ('single' 4:3 for one
+        panel, 'double' 16:9 for two), else as it is."""
+        if psk is not None:
+            return psk.publication_copy(fig, self._preset_for(fig), unpin=False)
+        return pickle.loads(pickle.dumps(fig))
 
     def _figure_or_warn(self, title):
         fig = self._current_figure()
@@ -966,6 +1037,9 @@ class NSZViewer:
     def save_figure_image(self):
         fig = self._figure_or_warn("Save Figure Image")
         if fig is None:
+            return
+        if psk is not None:
+            psk.save_image_dialog(fig, self.root, preset=self._preset_for(fig), unpin=False)
             return
         path = filedialog.asksaveasfilename(
             title="Save Figure Image", defaultextension=".png",
@@ -978,12 +1052,15 @@ class NSZViewer:
             traceback.print_exc()
             messagebox.showerror("Save Figure Image", f"Save failed:\n{e}")
             return
-        messagebox.showinfo("Save Figure Image", f"Figure saved:\n{path}")
+        messagebox.showinfo("Save Figure Image", f"Figure saved (plain look: PlotStyleKit is not in use):\n{path}")
 
     def save_figure_pickle(self):
         """Save the figure as a matplotlib pickle: reopenable with plot_editor.pyw as a live Figure object."""
         fig = self._figure_or_warn("Save Figure")
         if fig is None:
+            return
+        if psk is not None:
+            psk.save_pickle_dialog(fig, self.root, preset=self._preset_for(fig), unpin=False)
             return
         path = filedialog.asksaveasfilename(
             title="Save Figure", defaultextension=".fig.pickle",
@@ -997,46 +1074,62 @@ class NSZViewer:
             traceback.print_exc()
             messagebox.showerror("Save Figure", f"Save failed:\n{e}")
             return
-        messagebox.showinfo("Save Figure", f"Figure saved:\n{path}")
-
-    def _load_plot_editor(self):
-        """Import plot_editor (only once): first a local copy, then the sibling repo PlotStyleKit."""
-        if self._pe_module is None:
-            import importlib.util
-            here = os.path.dirname(os.path.abspath(__file__))
-            candidates = [os.path.join(here, 'plot_editor.pyw'),
-                          os.path.join(here, '..', 'PlotStyleKit', 'plot_editor.pyw')]
-            path = next((c for c in candidates if os.path.isfile(c)), None)
-            if path is None:
-                raise FileNotFoundError(
-                    "plot_editor.pyw not found (PlotStyleKit repo missing next to this project)")
-            spec = importlib.util.spec_from_file_location('plot_editor', path)
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            self._pe_module = mod
-        return self._pe_module
+        messagebox.showinfo("Save Figure", f"Figure saved (not restyled: PlotStyleKit is not in use):\n{path}")
 
     def open_figure_editor(self):
         """Open the PlotStyleKit Plot Editor on a copy of the current figure."""
         fig = self._figure_or_warn("Edit Figure")
         if fig is None:
             return
-        try:
-            pe = self._load_plot_editor()
-        except Exception as e:
-            traceback.print_exc()
-            messagebox.showerror("Edit Figure", f"plot_editor.pyw not available:\n{e}")
+        if not self._need_plotstylekit("Edit Figure"):
             return
+        psk.edit_dialog(fig, self.root, title="current figure", preset=self._preset_for(fig), unpin=False)
+
+    # ---- PlotStyleKit: the Origin look and the figure editor (a fallback without it for each) ----
+    def _adopt_plotstylekit(self, mod):
+        """Start a PlotStyleKit that was just located (at start-up or from File > PlotStyleKit...)."""
+        global psk, PSK_PROBLEM
         try:
-            copy = self._copy_figure(fig)
+            mod.setup()
         except Exception as e:
-            traceback.print_exc()
-            messagebox.showerror("Edit Figure", f"Cannot duplicate the figure:\n{e}")
+            messagebox.showwarning("PlotStyleKit", f"PlotStyleKit failed to start:\n{e}", parent=self.root)
+            return False
+        psk, PSK_PROBLEM = mod, None
+        self._refresh_all()
+        messagebox.showinfo("PlotStyleKit", f"PlotStyleKit {mod.VERSION} is in use:\n{os.path.dirname(mod.__file__)}",
+                            parent=self.root)
+        return True
+
+    def _offer_plotstylekit(self, problem):
+        """The warning that asks for the folder of PlotStyleKit, with a Cancel for going without it."""
+        mod = _ask_plotstylekit_folder(self.root, problem)
+        if mod is not None:
+            self._adopt_plotstylekit(mod)
+
+    def plotstylekit_dialog(self):
+        """File > PlotStyleKit...: locate it (when it is not in use) or pick another copy (when it is)."""
+        if psk is None:
+            _psk_save(declined=False)
+            self._offer_plotstylekit(PSK_PROBLEM or "PlotStyleKit is not in use")
             return
-        top = tk.Toplevel(self.root)
-        top.geometry("1300x820")
-        editor = pe.PlotEditor(top)
-        editor.carica_figura(copy, title="current figure")
+        folder = filedialog.askdirectory(parent=self.root, title="Folder of PlotStyleKit (now in use: "
+                                         f"{os.path.dirname(psk.__file__)})")
+        if not folder:
+            return
+        mod, why = _psk_try(folder, PSK_MIN_API)
+        if mod is None:
+            messagebox.showwarning("PlotStyleKit", why + ".", parent=self.root)
+            return
+        _psk_save(path=folder, declined=False)
+        self._adopt_plotstylekit(mod)
+
+    def _need_plotstylekit(self, what):
+        """For what only PlotStyleKit does (the figure editor): offer to find it. True if it is in use afterwards."""
+        if psk is None and messagebox.askyesno(
+                what, f"{what} belongs to PlotStyleKit, which is not in use.\n\nLocate PlotStyleKit now?",
+                parent=self.root):
+            self.plotstylekit_dialog()
+        return psk is not None
 
     # ── Utility ───────────────────────────────────────────────────────────────
 

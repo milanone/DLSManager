@@ -64,14 +64,19 @@ header lengths above reproduce all three CSV columns exactly (to the CSV roundin
 
 ## PlotStyleKit
 
-`_load_origin_style()` loads `origin_style.py` by path (local copy, then `../PlotStyleKit`) and calls
-`applica_rcparams()` at import; `sample_colors()` then uses the Origin colour cycle (black first), else the fallback
-`COLORS`. `_style_figure(fig)` applies `applica_stile_origin(ax, None, set_size=False)` to every axes, enlarges the fonts
-for the pane and runs one `tight_layout` (no grid with the style; the dashed grid only without PlotStyleKit). File menu:
-`Save Figure Image`, `Save Figure (pickle)`, `Edit Figure...` act on the active plot tab (`_current_figure()`) through
-`_copy_figure()` (pickle copy, restyled: `single` 4:3 for one panel, `double` 16:9 for two). Style changes go in
-PlotStyleKit, never here. (This project exposed that `applica_stile_origin` set `AutoMinorLocator` on log axes, which
-matplotlib warns about; PlotStyleKit now skips non-linear axes.)
+Found by the common bootstrap block near the top of `nsz_viewer.pyw` (the same text as in PlotStyleKit's README: change it
+there, not here): `psk` is its integration module `plotstylekit.py` or None, `PSK_PROBLEM` says why. If it is not found and
+the user has not declined, `_offer_plotstylekit()` asks for the folder 400 ms after the window opens; File > PlotStyleKit...
+(`plotstylekit_dialog()`) changes it later and replots (`_refresh_all`, because the sample colours change too).
+`sample_colors()` uses the Origin colour cycle (black first) with it, else the fallback `COLORS`. `_style_figure(fig)` applies
+`psk.style(ax, None, set_size=False)` to every axes, enlarges the fonts for the pane and runs one `tight_layout` (no grid with
+the style; the dashed grid only without PlotStyleKit). File menu: `Save Figure Image`, `Save Figure (pickle)`, `Edit Figure...`
+act on the active plot tab (`_current_figure()`) through `psk.save_*_dialog` / `psk.edit_dialog` (`preset` = `single` 4:3 for
+one panel, `double` 16:9 for two: `_preset_for`; `unpin=False`: the legend stays where it is). Fallbacks without it: the figure
+is saved as drawn (`_copy_figure()` is a plain pickle copy) and 'Edit Figure' offers to locate PlotStyleKit
+(`_need_plotstylekit`). Style changes go in PlotStyleKit, never here. (This project exposed that `applica_stile_origin` set
+`AutoMinorLocator` on log axes, which matplotlib warns about; PlotStyleKit now skips non-linear axes.)
+`tests/test_plotstylekit.py` drives all of this with answers in place of the dialogs.
 
 ## Editing conventions (project)
 - Follow `..\CLAUDE.md`: everything in English, surgical edits. The UI was in Italian and was translated in one pass
