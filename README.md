@@ -103,6 +103,15 @@ channel that differs between measurements) and applied to the inversions by defa
 drawn hollow). On the files checked this changes the distributions very little, so it does not explain why the program's
 free distribution of the 450 nm liposomes (mean 453 nm, mode 475 nm) differs from the instrument's (413 and 380 nm).
 
+The reason is that the instrument's distribution is not an inversion of its own fit. On the 29 intensity distributions
+checked (latex and liposomes, PI from 0.014 to 0.38) it is always a peak of the same width, 10-11 bins with a σ of ln d of
+0.22-0.28, and only its position changes. Passed through the scattering kernel, it does not reproduce the correlogram that
+the instrument fits to the data (rms of g₂−1 0.004 for the latex and 0.03 for the 450 nm liposomes, against 0.0003 for the
+instrument's own fit), whereas a free log-normal peak fitted to the data reaches 0.0002-0.001 with σ of 0.38-0.77. The
+instrument's width therefore says nothing about the sample, while the program's follows the data (and is limited by its
+resolution). Also, the diameters in the instrument's table are bin upper edges: its mean is exactly the table's mean
+divided by √1.1298 (the bin ratio) in all 29 files, so its stated mode and mean sit about 6% below the plotted peak.
+
 Volume and number weightings are conversions of the fitted intensity distribution, not measurements. Mie theory is the
 default (homogeneous sphere, no absorption, vertical polarisation; the code reproduces Qext = Qsca and S(0) from an
 independent computation with scipy's Bessel functions, but it was not compared with the instrument's own volume/number

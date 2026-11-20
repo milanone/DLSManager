@@ -106,6 +106,17 @@ unrestricted); the tab's 'Instrument range' checkbox (on by default) draws the e
 (the g1 minimum already cuts the tail): 450 nm liposomes, mean/mode 453/475 with and without; it does not explain the gap to the
 instrument's 413/380. `ChannelsCumuFrom/To` (1-41) and `FlAutoChannels` (2) are also in the file, not used.
 
+Why the instrument's distribution differs from ours (investigated 2026-11-20, 29 files of LabSpectrumManager's `spettri di esempio`): the
+stored intensity distribution is NOT the inversion of the stored fit. (1) Its width is constant: always 10-11 non-zero bins, sigma of ln d
+0.22-0.28 (skew ~0.1), for PI 0.014-0.38; only the position moves (centre/Z 1.02-1.09, 1.38 for the 450 nm liposomes). (2) The instrument's fit
+follows the data (rms of g2-1 1e-4..3e-4 over its channels), but its distribution through our kernel (D q^2, T, viscosity, n and angle of the
+file) gives rms 0.004 (latex), 0.005 (200 nm lipo), 0.03 (450 nm lipo) against the same data; the best fixed-sigma (0.236) log-normal peak
+fitted by us reaches only 0.0026 / 0.0135, a free-sigma one 0.0002-0.001 with sigma 0.38-0.77. So the instrument's width is a template, ours
+follows the data; differences in width and mean are expected, and the cause is not our kernel (checked: g1 vs g1^2, free baseline). Not found:
+the rule that places the instrument's peak. (3) The table's diameters are bin upper edges: `Mean1_nm` / (sum of table diameter x frequency) is
+0.9408 = 1/sqrt(1.1298, the bin ratio) in all 29 files, so the stated mean/mode sit ~6% below the plotted peak. The plot still uses the table
+(it matches the CSV); shifting it by 1/sqrt(ratio) is an option if Francesco wants the curve to agree with the stated mode.
+
 Lamellae (2026-11-20): `_shell_params()` = (lamellae n, bilayer 4.5 nm, repeat distance 7 nm, lipid index excess 0.12; invalid -> these defaults), `_shell()` = the one
 equivalent shell: thickness n*rep-(rep-t), index excess dn*n*t/thickness (LabSpectrumManager's `vesicle_amplitude` model; n = 1 is the
 bilayer itself). 'Particle n' belongs to the 'Mie' conversion only; the fields of the other conversions are disabled (`_conv_fields`,
