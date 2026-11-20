@@ -113,7 +113,10 @@ aperture=)` now averages the Mie / Mie shell intensity over angle +- aperture (9
 `_aperture()`, shared by both Mie conversions through the `"Mie|Mie shell"` key of `_conv_fields`, shown in the text under the plot). The aperture
 of the SZ-100 is NOT known: 10 is an assumption. Checked in the real window on `_0834`: at +-10 the volume mode moves from 356 to 95 nm and the
 mean from 177 to 161 nm, but the peak at ~350 nm REMAINS (0.83 of the maximum; it ends at the 5% tail cut); numerically +-20 reduces it to
-0.30 (mean 144 nm; the certificate's volume mean is ~134 nm). So the aperture reduces the artefact, it does not remove it, and the small-size
+0.30 (mean 144 nm; the certificate's volume mean is ~134 nm). Francesco then saw it vanish at 40 and return unchanged at 50: `_aperture()`
+rejected anything above 45 and fell back to the default 10 silently (now clamped to 0-45). On the program's own grid the peak is 0.83 / 0.30 / gone
+at +-10 / 20 / 30, so it needs an aperture far wider than a real detector: the average is a smoothing, not a physical correction. Averaging I1 over
+the size spread inside a bin (sigma of ln d 0.05-0.20) does not remove it either (it moves to 283-336 nm at 0.6-0.7). So the aperture reduces the artefact, it does not remove it, and the small-size
 amplification (mode 95 nm) stays. Number and volume of the free distribution remain indicative. A narrow true distribution (CV 10% in the
 certificate, 1229748_C37485.pdf in `example data/`) is recovered exactly by the one-peak model on synthetic data (number 130, volume 134) but
 the free inversion widens sigma(ln d) from 0.10 to 0.31 and gives number 95 nm: the number mean is ~exp(-k sigma^2) times the intensity

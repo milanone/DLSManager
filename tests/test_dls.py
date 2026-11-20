@@ -443,6 +443,10 @@ class TestDlsTab(unittest.TestCase):
         self.assertEqual(app._aperture(), nsz.DLS_APERTURE)
         app.dls_vars['aperture'].set("0")
         self.assertEqual(app._aperture(), 0.0)
+        app.dls_vars['aperture'].set("50")                             # limited to 45, not silently replaced by the default
+        self.assertEqual(app._aperture(), 45.0)
+        app.dls_vars['aperture'].set("-5")
+        self.assertEqual(app._aperture(), 0.0)
         app.dls_vars['aperture'].set("10")
 
     def test_mie_shell_conversion_in_the_tab_with_lamellae(self):

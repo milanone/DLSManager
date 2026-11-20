@@ -483,7 +483,8 @@ DLS_TIPS = {
                 "The light one particle scatters is averaged over the scattering angle +- this value, which washes out "
                 "the narrow interference minima of a single angle; without it, a small tail of the distribution sitting "
                 "at such a minimum becomes a spurious peak in volume and number. The value for the SZ-100 is not known: "
-                "10 is an assumption. 0 = the single angle.",
+                "10 is an assumption. 0 = the single angle, at most 45. The minimum is only removed by an aperture of about 30 "
+                "degrees or more, wider than a real detector: it is a smoothing, not a physical correction.",
     'pn': "Refractive index of the particle for the 'Mie' conversion (a solid sphere). Empty: the value stored in the "
           "file, set in the instrument software (1.6 by default). Not used by 'Mie shell' (which has its own "
           "parameters) or 'Rayleigh'.",
@@ -1807,14 +1808,12 @@ class DLSManager:
         return self._dls_cache[key]
 
     def _aperture(self):
-        """Half-width (degrees) of the detector aperture typed in the tab; the default DLS_APERTURE if invalid."""
+        """Half-width (degrees) of the detector aperture typed in the tab, limited to 0-45 (a value above 45 used to fall
+        back silently to the default, which looked like the result jumping back); the default DLS_APERTURE if not a number."""
         try:
-            v = float(self.dls_vars['aperture'].get())
-            if 0 <= v <= 45:
-                return v
+            return min(max(float(self.dls_vars['aperture'].get()), 0.0), 45.0)
         except ValueError:
-            pass
-        return DLS_APERTURE
+            return DLS_APERTURE
 
     def _dls_summary(self, path, name, r, model, wl, alpha, gmin, weight=DLS_WEIGHTS[0], i1=None, conv="Rayleigh"):
         """Text lines for one sample: cumulants and distribution, each with the instrument's value."""
