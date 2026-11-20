@@ -22,9 +22,28 @@ nsz = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(nsz)
 
 DATA = os.path.join(HERE, "..", "example data")
-SAMPLE = os.path.join(DATA, "lipo_bup_MLV_0minson_scattering_0729.nsz")
-SAMPLE_CSV = os.path.join(DATA, "lipo_bup_MLV_0minson_scattering_0731.csv")
-HAS_SAMPLE = os.path.isfile(SAMPLE) and os.path.isfile(SAMPLE_CSV)
+
+
+def find_sample():
+    """(nsz, csv) of the real sample: the CSV in 'example data/' names the .nsz it was exported from in its first item
+    line; that file is looked for next to the CSV, then in the sample folders of LabSpectrumManager (the .nsz
+    placed in 'example data/' may be another measurement than the one the CSV belongs to). (None, None) if absent."""
+    import glob
+    csvs = sorted(glob.glob(os.path.join(DATA, "*.csv")))
+    if not csvs:
+        return None, None
+    with open(csvs[0], newline="", encoding="latin-1") as f:
+        rows = list(csv.reader(f))
+    name = next((r[0] for r in rows if r and r[0].lower().endswith(".nsz")), "")
+    for folder in (DATA, *glob.glob(os.path.join(HERE, "..", "..", "LabSpectrumManager", "spettri di esempio", "*"))):
+        path = os.path.join(folder, name)
+        if name and os.path.isfile(path):
+            return path, csvs[0]
+    return None, csvs[0]
+
+
+SAMPLE, SAMPLE_CSV = find_sample()
+HAS_SAMPLE = SAMPLE is not None
 
 
 def read_software_csv(path):
@@ -328,8 +347,9 @@ class TestApplication(unittest.TestCase):
         self.assertEqual(len(self.app.selected), 1)
         rows = {self.app.tree.item(i, "values")[0]: self.app.tree.item(i, "values")
                 for i in self.app.tree.get_children()}
-        self.assertEqual(rows["Z-Average (nm)"][1], "1117.7646")
-        self.assertEqual(rows["PDI"][1], "0.6013")
+        _items = read_software_csv(SAMPLE_CSV)[0]
+        self.assertAlmostEqual(float(rows["Z-Average (nm)"][1]), float(_items["Z-Average"]), delta=0.06)
+        self.assertAlmostEqual(float(rows["PDI"][1]), float(_items["PI"]), delta=0.0006)
         self.app._load_files([SAMPLE])                                          # same file again: ignored
         self.assertEqual(self.app.listbox.size(), 1)
 

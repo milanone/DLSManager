@@ -8,7 +8,7 @@ exports everything to Excel.
 
 > **Unofficial.** This project is not affiliated with or endorsed by Horiba. The `.nsz`
 > format was worked out by inspecting files, and the extracted values were validated against
-> the CSV exported by the instrument software on a single sample (see "Validation" below). Check the results
+> the CSV exported by the instrument software on two measurements, one for each of the two file layouts below (see "Validation" below). Check the results
 > against your own exports before relying on them, especially with other instrument models.
 
 ![Autocorrelogram tab](screenshot.png)
@@ -65,10 +65,13 @@ files are missing.
 
 ## Validation
 
-On one sample (a single `.nsz` and the CSV of the same measurement) the viewer matches the software for: mean, SD, mode,
-Z-average and PDI; the 84-bin size distribution (frequency and cumulative); and the correlation function and its fit
-(the file holds g₁², the CSV g₁; the residuals follow the same pattern but are not equal). Not verified: other
-instrument models or software versions, measurements with two peaks, and the date/time (the time is read from the
+The `.nsz` layout changed between software versions (the `Object` streams are numbered differently, the measurement
+parameters moved from `Base34`/`Base38` to `Base35`/`Base39`), so the program finds the curves by their content. It was
+checked against the CSV that the instrument software exported for the same measurement, on one file of each version (June
+2026: a multilamellar liposome sample; 19 November 2026: `lipo 100 1a10 in PBS`). In both the program matches the software for:
+mean, SD, mode, Z-average and PDI; the 84-bin size distribution (frequency and cumulative); and the correlation function and its
+fit (the file holds g₁² in the older layout, the CSV g₁; the residuals follow the same pattern but are not equal). Not verified:
+other instrument models, measurements with two peaks, and the date/time of the older file (the time is read from the
 measurement ID and showed `12:22:00` for a measurement that the software dates `12:22:39`).
 
 The DLS analysis was checked on 15 measurements of a polystyrene latex (certified 130 nm by TEM; 1:100 to 1:800 in 10 mM
@@ -77,7 +80,7 @@ the mode of the free distribution equals the instrument's at 173° (142 nm) and 
 (σ of ln d about 0.25) for which a second peak is not supported (BIC). At 90° the two-peak model does improve the BIC, but the
 second peak (15-30%) sits at the width limit of the fit, which is not credible for a latex: read it as a tail, not a
 population. The PI is noisy from file to file (it often differs from the instrument's by 0.03-0.08). On the very
-polydisperse sample of `example data/` (PI 0.6) the Z-average is 4% above the instrument's, the free inversion piles up at
+polydisperse sample of June (PI 0.6, a multilamellar liposome preparation) the Z-average is 4% above the instrument's, the free inversion piles up at
 the upper size limit (3000 nm) and the peak fits hit their width limit: the methods are at the edge of their validity for
 such a sample. The two-peak split is an ill-posed inversion: it is not stable between replicates and is only meaningful for sizes
 that differ by about 3 times or more; the BIC difference is shown for that reason.
@@ -105,9 +108,9 @@ An `.nsz` file is an OLE compound file. The viewer reads these streams:
 |---|---|
 | `Delay`, `OriginalACF` (inside one stream) | The 43 lag times (seconds) and the normalised correlation g₂−1, each array preceded by its byte length |
 | `Object2`, `Object3` | Same correlation, but `Object3` lacks the first 6 lag times, so the program no longer uses it (kept as a fallback) |
-| `Object10`, `Object7` | Fit and residuals; the header holds the number of initial channels excluded from the fit |
-| `Object5`, `Object4`, `Object31` | Size bins (84), intensity distribution, cumulative distribution |
-| `Base1`, `Base34`, `Base38` | Calculated results, measurement parameters, sample name |
+| fit and residual streams (`Object10`, `Object7` or `Object11`, `Object8`) | Fit and residuals of the channels the instrument used for the distribution (from channel 7) |
+| size bins, intensity and cumulative distribution (`Object5`, `Object4`, `Object31` or `Object6`, `Object5`, `Object32`) | 84 bins each |
+| `Base1`, `Base34`/`Base35`, `Base38`/`Base39` | Calculated results, measurement parameters, sample name |
 
 Two details matter when interpreting the values: the diameter fields (`CalcMean`, `CalcPeakPos`,
 `CalcPerDiameter`, `Cum_fMean`, ...) are stored as **radii**, so the viewer multiplies them by 2;

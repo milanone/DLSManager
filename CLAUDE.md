@@ -17,9 +17,13 @@ pythonw DLSManager.pyw [file.nsz ...]
 py -m unittest discover -s tests -v
 ```
 
-Sample data: `example data/lipo_bup_MLV_0minson_scattering_0729.nsz` and the software CSV of the same measurement
-`..._0731.csv` (gitignored: real data, never commit). Tk tests need a screen; tests that need the sample are skipped
-without it. The two `screenshot*.png` are the real program with that sample (`ImageGrab` on the window, topmost).
+Sample data: `example data/` holds a software CSV (changed 2026-11-20 by Francesco to `lipo 100 1a10 in PBS_0845.csv`; gitignored:
+real data, never commit). **Its header names `..._0843.nsz`, not `_0845`**: the `.nsz` next to it is another replicate, so the
+tests (`find_sample()` in `tests/test_nsz_viewer.py`) read the `.nsz` named in the CSV and look for it next to the CSV, then in the
+`spettri di esempio` folders of LabSpectrumManager (where `_0843` is). Putting `lipo 100 1a10 in PBS_0843.nsz` into `example data/`
+would make the folder self-contained. The earlier sample (`lipo_bup_MLV_0minson_scattering_0729.nsz` + `_0731.csv`, June layout) is
+only in the Drive mirror's history. Tk tests need a screen; tests that need the sample are skipped without it. The three
+`screenshot*.png` are the real program with the `_0845` file (window grabbed with `CopyFromScreen`, cropped).
 
 ## Architecture
 
@@ -34,6 +38,7 @@ samples), `_write_xlsx` writes one workbook per sample, `_to_number_dist` conver
 
 | Stream | Content and how it is read |
 |---|---|
+| *layouts* | **The `Object` numbers depend on the software version.** The 2026-06 file: sizes `Object5`, intensity `Object4`, cumulative `Object31`, fit `Object10`, residuals `Object7`. The 2026-11-19 files: `Object6`, `Object5`, `Object32`, `Object11`, `Object8` (`Object4` is a 114 kB blob). `_nsz_curves()` finds them by content (101 floats ending near 8510 = diameters; 88 floats summing to 100 = intensity, rising to 100 = cumulative; the stream of 3 + (`Dist_ChannelTo` - `Dist_ChannelFrom` + 1) floats closest to the ACF = fit g2-1, the small-valued one most correlated with ACF - fit = residuals) and the old names are only a fallback. Before this (fixed 2026-11-20) the newer files gave 12 size bins and a wrong fit. Verified against the CSV of `_0843` (new layout): Z, PI, mean, mode, the three tables, correlation and fit (5e-7) and the residual pattern (0.88 at offset 1); and again the June file |
 | `Object3` | lag times: 16 header floats, then tau (µs); trailing repeated baseline channels are cut where tau stops increasing (43 -> 37 channels in the sample) |
 | `Object2` | correlation (same numbers as `OriginalACF`): 3 header floats, then one value per channel. These are **g1 squared** (g2-1): the software's CSV g1 equals `sqrt(value)` to 5e-7, CSV row k = channel 7 + k |
 | `Object10` | fit: header `[1][n_fit][fit_offset]`, then values; `fit_offset` (6) = initial channels excluded from the fit; also g1 squared, CSV fit row k = `sqrt(fit[k+1])` |
@@ -72,6 +77,8 @@ unrestricted); the tab's 'Instrument range' checkbox (on by default) draws the e
 (the g1 minimum already cuts the tail): 450 nm liposomes, mean/mode 453/475 with and without; it does not explain the gap to the
 instrument's 413/380. `ChannelsCumuFrom/To` (1-41) and `FlAutoChannels` (2) are also in the file, not used.
 
+Mie shell conversion (`mie_shell_intensity`, `DLS_CONVERSIONS` 'Mie shell'): a vesicle as a coated sphere with a core of the medium, shell thickness (default 4.5 nm) and index excess (0.12), the defaults and the coefficients of LabSpectrumManager's vesicle model; the tab has the two entries on a third row. Checked: with a shell thicker than the radius it equals the solid-sphere Mie to 1e-6, and a thin shell scatters ~d^4 at small sizes (instead of d^6). Volume stays the outer-sphere volume d^3 (not the lipid volume). The shell parameters are order-of-magnitude assumptions (a multilamellar vesicle needs a larger thickness), and no instrument value was compared.
+
 Weighting selector (`dls_reweight`, `dls_reweight_peaks`, `dls_stats`, `dls_floor`, `DLS_WEIGHTS`, `DLS_CONVERSIONS`): number = p / I1,
 volume = p d^3 / I1 on the log grid, with I1 = light one particle scatters, from `mie_intensity` (Bohren-Huffman, |S1|^2, vertical
 polarisation, homogeneous non-absorbing sphere, index `MeasSampleRef` of the file = `params['n_particle']`, 1.6 default in the
@@ -91,13 +98,13 @@ Verified on 15 polystyrene latex measurements (the `20261119 DLS lattice e lipos
 support for a second peak at 173 degrees (BIC difference -8..-9); at 90 degrees the 2-peak fit wins on BIC but its second peak
 (14-31%) is at the sigma bound 1.2, so it is a tail, not a population. PI is within ~0.03-0.08 of the instrument's, either way.
 Also verified in LabSpectrumManager on four files; the two-peak split is ill-posed and only sensible for sizes ~3x apart.
-Verified on the `example data` sample (PI 0.6): Z-average +4.2%, PI 0.44 against 0.60; the free
+Verified on the June sample (`lipo_bup_MLV..._0729`, PI 0.6): Z-average +4.2%, PI 0.44 against 0.60; the free
 inversion has its mode at the 3000 nm limit and the peak fits reach sigma 1.2 (bound), so for this aggregated sample the sizes of
 the distribution are not reliable beyond the Z-average. Not done: the DLS results are not in the Excel export.
 
 ## Verified / not verified
 
-- Verified on **one** measurement against the software CSV: Mean, SD, Mode, Z-average, PDI; size table (diameter,
+- Verified on **two** measurements (one per software version) against the software CSV: Mean, SD, Mode, Z-average, PDI; size table (diameter,
   frequency, undersize); correlation and fit (as g1 squared). See `tests/test_nsz_viewer.py::TestRealSample`.
 - The correlation is plotted as stored (g2-1, label `g2(tau) - 1`); the software shows g1. Offer to switch to g1
   (`sqrt`) if Francesco wants the same curve as the software.

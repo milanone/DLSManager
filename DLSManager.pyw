@@ -218,6 +218,58 @@ def _nsz_correlogram(ole):
     return None
 
 
+def _nsz_int_key(ole, key):
+    """int32 stored after `key` and a NUL byte in any stream, or None."""
+    for entry in ole.listdir(streams=True, storages=False):
+        m = re.search(re.escape(key) + b'\x00(.{4})', ole.openstream(entry).read(), re.S)
+        if m:
+            return struct.unpack('<i', m.group(1))[0]
+    return None
+
+
+def _nsz_curves(ole, acf, ch_from, ch_to):
+    """Size distribution and fit curves found by CONTENT, because the software versions number the `Object` streams
+    differently (2026-06 file: sizes Object5, intensity Object4, cumulative Object31, fit Object10, residuals Object7;
+    2026-11-19 files: Object6, Object5, Object32, Object11, Object8). Returns a dict with whichever of 'sz' (17 header
+    floats, 84 diameters ending near 8510 nm), 'intens' (3 header floats, 84 values summing to 100), 'cumul' (4 header
+    floats, 84 values rising to 100), 'fit' and 'resid' (3 header floats, then one value per correlator channel
+    ch_from..ch_to, g2-1) it could identify. The fit is the stream of that length closest to the measured ACF over the
+    channels, the residual the small-valued one most correlated with ACF - fit."""
+    arrs = {}
+    for entry in ole.listdir(streams=True, storages=False):
+        if len(entry) == 1 and entry[0].startswith('Object'):
+            raw = ole.openstream(entry).read()
+            if len(raw) > 2000:          # a 100 kB blob (not a curve) in the newer files
+                continue
+            arrs[entry[0]] = np.frombuffer(raw[:len(raw) // 4 * 4], '<f4').astype(float)
+    names = sorted(arrs, key=lambda n: int(n[6:]) if n[6:].isdigit() else 0)
+    out = {}
+    for n in names:
+        a = arrs[n]
+        if not np.all(np.isfinite(a)):
+            continue
+        if len(a) == 101 and 8000 < a[-1] < 9000:
+            out.setdefault('sz', a[17:101])
+        elif len(a) == 88:
+            if abs(a[87] - 100) < 0.5 and np.all(np.diff(a[4:88]) >= -1e-3):
+                out.setdefault('cumul', a[4:88])
+            elif abs(a[3:87].sum() - 100) < 1.0:
+                out.setdefault('intens', a[3:87])
+    if ch_from and ch_to:
+        n_ch = ch_to - ch_from + 1
+        ref = np.asarray(acf[ch_from - 1:ch_to], float)
+        cands = [arrs[n][3:] for n in names if len(arrs[n]) == 3 + n_ch and np.all(np.isfinite(arrs[n]))]
+        if len(ref) == n_ch and cands:
+            fits = [c for c in cands if 0.3 < c.max() < 1.2]
+            if fits:
+                fit = min(fits, key=lambda c: float(np.sqrt(np.mean((c - ref) ** 2))))
+                out['fit'] = fit
+                small = [c for c in cands if np.abs(c).max() < 0.05 and c.std() > 0]
+                if small:
+                    out['resid'] = max(small, key=lambda c: abs(float(np.corrcoef(c, ref - fit)[0, 1])))
+    return out
+
+
 def _read_nsz(path, ole):
     def s(name):
         return ole.openstream(name).read() if ole.exists(name) else b''
@@ -237,6 +289,11 @@ def _read_nsz(path, ole):
         tau = tau_full[:cut]
         acf = acf_full[:cut]
 
+    ch_from, ch_to = _nsz_int_key(ole, b'Dist_ChannelFrom'), _nsz_int_key(ole, b'Dist_ChannelTo')
+    if not (ch_from and ch_to and 1 <= ch_from < ch_to <= len(tau)):
+        ch_from = ch_to = None
+    curves = _nsz_curves(ole, acf, ch_from, ch_to)
+
     # Horiba fit and residuals.
     # Object10 header: [int=1][int=n_fit][int=fit_offset], then the fit values.
     # fit_offset = number of initial channels (afterpulsing) excluded from the analysis.
@@ -244,12 +301,17 @@ def _read_nsz(path, ole):
     FIT_OFFSET = struct.unpack('<I', struct.pack('<f', obj10_raw[2]))[0] if len(obj10_raw) > 2 else 6
     fit   = obj10_raw[3:]
     resid = f32(s('Object7'))[3:]
+    if 'fit' in curves:      # found by content: the Object numbers depend on the software version
+        FIT_OFFSET, fit = ch_from - 1, list(curves['fit'])
+        resid = list(curves['resid']) if 'resid' in curves else []
 
     # Size distribution: 84 bins, with a different header length in each stream (17, 3 and 4 float32);
     # validated against the CSV exported by the instrument software (all three match to its rounding)
     sz    = f32(s('Object5'))[17:17+84]
     intens= f32(s('Object4'))[3:3+84]
     cumul = f32(s('Object31'))[4:4+84]
+    if all(k in curves for k in ('sz', 'intens', 'cumul')):
+        sz, intens, cumul = list(curves['sz']), list(curves['intens']), list(curves['cumul'])
     nb    = min(len(sz), len(intens), len(cumul))
     sz, intens, cumul = sz[:nb], intens[:nb], cumul[:nb]
 
@@ -264,14 +326,6 @@ def _read_nsz(path, ole):
                 if key in data:
                     return data
         return s(default)
-    def int_key(key):
-        """int32 stored after `key` and a NUL byte in any stream, or None."""
-        for entry in ole.listdir(streams=True, storages=False):
-            m = re.search(re.escape(key) + b'\x00(.{4})', ole.openstream(entry).read(), re.S)
-            if m:
-                return struct.unpack('<i', m.group(1))[0]
-        return None
-    ch_from, ch_to = int_key(b'Dist_ChannelFrom'), int_key(b'Dist_ChannelTo')
     d34 = by_key(b'MeasAngle', 'Base34')
     d38 = by_key(b'Sample_Name', 'Base38')
     p34 = parse_props(d34)
@@ -301,8 +355,8 @@ def _read_nsz(path, ole):
         'Visc_mPas':pv(p34, 'MeasSolventVisco'),
         'n_solvent': pv(p34, 'MeasSolventRef'),
         # Correlator channels (1-based, inclusive) the instrument used for the size distribution; None if absent
-        'Range_from': ch_from if ch_from and ch_to and 1 <= ch_from < ch_to <= len(tau) else None,
-        'Range_to': ch_to if ch_from and ch_to and 1 <= ch_from < ch_to <= len(tau) else None,
+        'Range_from': ch_from,
+        'Range_to': ch_to,
         'n_particle': pv(p34, 'MeasSampleRef'),   # index entered in the instrument software (1.6 default)
         # CalcMean/SD/Mode/PeakPos/D10/D50/D90 are stored as RADII → ×2
         # PDI: CalcTotalPI is wrong, use Cum_fPi
@@ -399,7 +453,8 @@ DLS_TIPS = {
     'conv': "How volume and number are obtained from the intensity distribution. Mie: the light one particle scatters "
             "at the measurement angle, from Mie theory with the refractive index of the particle (the one stored "
             "in the file by the instrument software, 1.6 by default, or the value typed here; leave empty for the "
-            "file's). Rayleigh: scattered intensity ~ d^6, valid only well below 100 nm.",
+            "file's). Mie shell: a vesicle (liposome) as a shell around a core of medium, with the shell thickness and "
+            "index excess typed below. Rayleigh: scattered intensity ~ d^6, valid only well below 100 nm.",
     'tail': "Free (regularised) distribution only, for volume and number: bins below this percentage of the maximum "
             "are dropped before the conversion. The inversion leaves a few percent of intensity at the edge of the "
             "size grid, which the conversion would turn into most of the particles. 0 keeps everything.",
@@ -407,6 +462,10 @@ DLS_TIPS = {
              "the file: from channel 7 up to a channel that depends on the measurement). Without it, every point "
              "above the g1 minimum is used. Files without that information use all points. The cumulants are not "
              "restricted.",
+    'shell': "Mie shell: a vesicle as a shell around a core filled with the medium. Thickness of the shell in nm (a "
+             "single bilayer is about 4.5 nm; each extra lamella adds about as much) and its refractive index above "
+             "the medium's (0.12 for a lipid bilayer, an order-of-magnitude value). With the outer diameter from the "
+             "distribution, the light one vesicle scatters grows about as d^4 at small sizes instead of d^6.",
     'gmin': "Only the points of the correlogram with g1 = sqrt(ACF) above this value are used: the tail is mostly "
             "noise. 0.1 for the regularised model, 0.05 for the peaks.",
 }
@@ -538,7 +597,7 @@ def dls_analyse(rec, model=DLS_MODELS[0], wavelength=532.0, alpha=1.0, gmin=None
 
 
 DLS_WEIGHTS = ("Intensity", "Volume", "Number")
-DLS_CONVERSIONS = ("Mie", "Rayleigh")
+DLS_CONVERSIONS = ("Mie", "Mie shell", "Rayleigh")
 _DLS_POWER = {"Intensity": 0, "Volume": 3, "Number": 6}   # Rayleigh: I ~ N d^6, so volume ~ I / d^3 and number ~ I / d^6
 
 
@@ -578,12 +637,52 @@ def mie_intensity(d_nm, wavelength_nm, n_medium, n_particle, angle_deg):
     return out
 
 
-def dls_per_particle(d, conversion, rec, wavelength, n_particle):
+def mie_shell_intensity(d_nm, wavelength_nm, n_medium, shell_dn, shell_nm, angle_deg):
+    """Same as mie_intensity() for a vesicle: a shell of thickness `shell_nm` and index n_medium + `shell_dn` around a
+    core filled with the medium (outer diameter d_nm; a diameter below twice the thickness is a solid sphere of the shell
+    index). Coated-sphere coefficients of Bohren-Huffman as in LabSpectrumManager's vesicle model. Needs scipy."""
+    from scipy.special import spherical_jn, spherical_yn
+
+    def ric(n, z):
+        j, yy = spherical_jn(n, z), spherical_yn(n, z)
+        jp, yp = spherical_jn(n, z, derivative=True), spherical_yn(n, z, derivative=True)
+        return z * j, j + z * jp, -z * yy, -(yy + z * yp)
+
+    m2 = (n_medium + shell_dn) / n_medium
+    mu = np.cos(np.radians(angle_deg))
+    out = np.empty(len(d_nm))
+    for i, d in enumerate(d_nm):
+        k = 2 * np.pi * n_medium / wavelength_nm
+        b = d / 2.0
+        a = max(b - shell_nm, 1e-6)
+        x, y = k * a, k * b
+        n = np.arange(1, int(np.ceil(y + 4 * y ** (1 / 3) + 2)) + 1)
+        p1x, d1x, _, _ = ric(n, x)
+        p2x, d2x, c2x, dc2x = ric(n, m2 * x)
+        py, dpy, cy, dcy = ric(n, y)
+        p2y, d2y, c2y, dc2y = ric(n, m2 * y)
+        xi, dxi = py - 1j * cy, dpy - 1j * dcy
+        An = (m2 * p2x * d1x - d2x * p1x) / (m2 * c2x * d1x - dc2x * p1x)
+        Bn = (m2 * p1x * d2x - p2x * d1x) / (m2 * dc2x * p1x - d1x * c2x)
+        an = (py * (d2y - An * dc2y) - m2 * dpy * (p2y - An * c2y)) / (xi * (d2y - An * dc2y) - m2 * dxi * (p2y - An * c2y))
+        bn = (m2 * py * (d2y - Bn * dc2y) - dpy * (p2y - Bn * c2y)) / (m2 * xi * (d2y - Bn * dc2y) - dxi * (p2y - Bn * c2y))
+        s1, pi_prev, pi_cur = 0j, 0.0, 1.0
+        for j in n:
+            tau = j * mu * pi_cur - (j + 1) * pi_prev
+            s1 += (2 * j + 1) / (j * (j + 1)) * (an[j - 1] * pi_cur + bn[j - 1] * tau)
+            pi_prev, pi_cur = pi_cur, ((2 * j + 1) * mu * pi_cur - (j + 1) * pi_prev) / j
+        out[i] = abs(s1) ** 2
+    return out
+
+
+def dls_per_particle(d, conversion, rec, wavelength, n_particle, shell=(4.5, 0.12)):
     """Intensity scattered by one particle of each diameter `d`: d^6 for 'Rayleigh', Mie theory for 'Mie' (needs the
     scattering angle and solvent index of `rec`, the laser wavelength and the refractive index of the particle)."""
     d = np.asarray(d, float)
     if conversion == "Rayleigh":
         return d ** 6
+    if conversion == "Mie shell":
+        return mie_shell_intensity(d, wavelength, rec['n'], shell[1], shell[0], rec['angle'])
     return mie_intensity(d, wavelength, rec['n'], n_particle, rec['angle'])
 
 
@@ -943,6 +1042,17 @@ class DLSManager:
         ent.pack(side=tk.LEFT)
         ent.bind("<Return>", lambda e: self._plot_dls())
         self._tips.extend(ToolTip(w, DLS_TIPS['conv']) for w in (cv, lab, ent))
+        ctrl3 = tk.Frame(self.tab_dls, bg="white")
+        ctrl3.pack(fill=tk.X, padx=14)
+        tk.Label(ctrl3, text="Vesicle shell (Mie shell):", bg="white", font=("Helvetica", 9)).pack(side=tk.LEFT)
+        for text, key, val in (("thickness (nm)", 'shell_t', '4.5'), ("index excess", 'shell_dn', '0.12')):
+            lab = tk.Label(ctrl3, text=text, bg="white", font=("Helvetica", 9))
+            lab.pack(side=tk.LEFT, padx=(8, 2))
+            self.dls_vars[key] = tk.StringVar(value=val)
+            ent = tk.Entry(ctrl3, textvariable=self.dls_vars[key], width=6)
+            ent.pack(side=tk.LEFT)
+            ent.bind("<Return>", lambda e: self._plot_dls())
+            self._tips.extend(ToolTip(w, DLS_TIPS['shell']) for w in (lab, ent))
         btn = tk.Button(ctrl2, text="Compute", command=self._plot_dls, bg="#FEF9C3", font=("Helvetica", 9))
         btn.pack(side=tk.LEFT, padx=12)
 
@@ -1359,13 +1469,23 @@ class DLSManager:
             pass
         return d['params'].get('n_particle') or 1.59
 
+    def _shell(self):
+        """(thickness nm, index excess) typed for the vesicle shell; the defaults of LabSpectrumManager if invalid."""
+        try:
+            t, dn = float(self.dls_vars['shell_t'].get()), float(self.dls_vars['shell_dn'].get())
+            if t > 0 and 0 < dn < 1:
+                return t, dn
+        except ValueError:
+            pass
+        return 4.5, 0.12
+
     def _dls_i1(self, d, rec, grid, conv, wl):
         """Light one particle scatters at each diameter of `grid` (None for Rayleigh: dls_reweight then uses d^6)."""
         if conv == "Rayleigh":
             return None
-        key = ('i1', d['path'], conv, wl, self._particle_index(d), len(grid))
+        key = ('i1', d['path'], conv, wl, self._particle_index(d), self._shell(), len(grid))
         if key not in self._dls_cache:
-            self._dls_cache[key] = dls_per_particle(grid, conv, rec, wl, self._particle_index(d))
+            self._dls_cache[key] = dls_per_particle(grid, conv, rec, wl, self._particle_index(d), self._shell())
         return self._dls_cache[key]
 
     def _dls_summary(self, path, name, r, model, wl, alpha, gmin, weight=DLS_WEIGHTS[0], i1=None, conv="Rayleigh"):
@@ -1385,7 +1505,8 @@ class DLSManager:
                        f"{inst('ZAvg_nm', '{:.1f}')} nm, PI {inst('PDI', '{:.3f}')}{diff}")
         w = weight.lower()
         by_int = weight == DLS_WEIGHTS[0]
-        how = (f"Mie, particle n {self._particle_index(self.samples[path]):g}" if conv == "Mie" else "Rayleigh (d^6)")
+        how = {"Mie": f"Mie, particle n {self._particle_index(self.samples[path]):g}",
+               "Mie shell": f"Mie shell, t {self._shell()[0]:g} nm, index excess {self._shell()[1]:g}"}.get(conv, "Rayleigh (d^6)")
         if r['peaks'] is None:
             mean, mode, sd = dls_stats(r['d'], self._weighted(r, weight, i1))
             out.append(f"  Regularised distribution by {w} (α = {alpha:g}{'' if by_int else f', tail cut {100 * self._tail_fraction():g}%'}): mean {mean:.0f} nm, mode {mode:.0f} nm, "

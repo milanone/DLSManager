@@ -5,6 +5,7 @@ and the real sample in 'example data/' against the values of the instrument (ski
 """
 import importlib.util
 import os
+import sys
 import unittest
 
 import numpy as np
@@ -14,7 +15,9 @@ spec = importlib.util.spec_from_file_location("nsz", os.path.join(HERE, "..", "D
 nsz = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(nsz)
 
-SAMPLE = os.path.join(HERE, "..", "example data", "lipo_bup_MLV_0minson_scattering_0729.nsz")
+sys.path.insert(0, HERE)
+from test_nsz_viewer import SAMPLE       # the .nsz that the CSV in 'example data/' was exported from
+
 
 try:
     import scipy.optimize  # noqa: F401
@@ -103,7 +106,7 @@ class TestRecord(unittest.TestCase):
         self.assertIsNone(nsz.dls_record(d))
 
 
-@unittest.skipUnless(os.path.isfile(SAMPLE) and HAS_SCIPY, "real sample or scipy not present")
+@unittest.skipUnless(SAMPLE and HAS_SCIPY, "real sample or scipy not present")
 class TestRealSample(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -111,14 +114,12 @@ class TestRealSample(unittest.TestCase):
         cls.rec = nsz.dls_record(cls.d)
 
     def test_record_uses_the_conditions_of_the_file(self):
-        self.assertEqual(self.rec['angle'], 173.0)
+        self.assertEqual(self.rec['angle'], self.d['params']['Angle_deg'])
         self.assertEqual(len(self.rec['tau']), 43)
 
     def test_z_average_is_close_to_the_instrument(self):
-        # This sample is very polydisperse (PI 0.6): the cumulant fit is least reliable here; 1-2% on less
-        # polydisperse files of LabSpectrumManager, 4% on this one.
         r = nsz.dls_analyse(self.rec, nsz.DLS_MODELS[0], self.d['params']['Lambda_nm'])
-        self.assertAlmostEqual(r['z'] / self.d['params']['ZAvg_nm'], 1.0, delta=0.06)
+        self.assertAlmostEqual(r['z'] / self.d['params']['ZAvg_nm'], 1.0, delta=0.03)
 
     def test_all_models_run(self):
         for m in nsz.DLS_MODELS:
@@ -219,6 +220,29 @@ class TestMie(unittest.TestCase):
         a = nsz.dls_reweight_peaks(peaks, "Number")[0]['median']
         b = nsz.dls_reweight_peaks(peaks, "Number", np.geomspace(5, 1e4, 4000), np.geomspace(5, 1e4, 4000) ** 6)[0]['median']
         self.assertAlmostEqual(a, b, delta=0.01 * a)
+
+
+@unittest.skipUnless(HAS_SCIPY, "scipy not installed")
+class TestMieShell(unittest.TestCase):
+    def test_a_shell_as_thick_as_the_radius_is_a_solid_sphere(self):
+        d = np.array([30.0, 130.0, 600.0])
+        for angle in (90.0, 173.0):
+            shell = nsz.mie_shell_intensity(d, 532.0, 1.333, 0.12, 1e5, angle)
+            solid = nsz.mie_intensity(d, 532.0, 1.333, 1.333 + 0.12, angle)
+            np.testing.assert_allclose(shell, solid, rtol=1e-6)
+
+    def test_a_thin_shell_scatters_like_d4_not_d6(self):
+        d = np.array([30.0, 60.0])
+        i = nsz.mie_shell_intensity(d, 532.0, 1.333, 0.12, 4.5, 90.0)
+        self.assertAlmostEqual(np.log(i[1] / i[0]) / np.log(2.0), 4.0, delta=0.5)
+
+    def test_shell_conversion_is_available_in_the_tab_conversions(self):
+        self.assertIn("Mie shell", nsz.DLS_CONVERSIONS)
+        rec = dict(COND)
+        d = np.geomspace(20, 800, 12)
+        i1 = nsz.dls_per_particle(d, "Mie shell", rec, 532.0, 1.6, (4.5, 0.12))
+        self.assertEqual(i1.shape, d.shape)
+        self.assertTrue(np.all(i1 > 0))
 
 
 class TestWeighting(unittest.TestCase):
@@ -344,6 +368,17 @@ class TestDlsTab(unittest.TestCase):
         self.app.dls_conv.set("Rayleigh")
         self.app._plot_dls()
         self.assertIn("Rayleigh", self.app.dls_text.get("1.0", "end"))
+
+    def test_mie_shell_conversion_in_the_tab(self):
+        self.app.notebook.select(self.app.tab_dls)
+        self.app.dls_weight.set("Number")
+        self.app.dls_conv.set("Mie shell")
+        self.app.dls_vars['shell_t'].set("9")
+        self.app._plot_dls()
+        self.assertIn("Mie shell, t 9 nm", self.app.dls_text.get("1.0", "end"))
+        self.app.dls_vars['shell_t'].set("abc")                       # invalid: back to the defaults
+        self.app._plot_dls()
+        self.assertIn("t 4.5 nm", self.app.dls_text.get("1.0", "end"))
 
     def test_models_and_invalid_settings(self):
         self.app.notebook.select(self.app.tab_dls)
