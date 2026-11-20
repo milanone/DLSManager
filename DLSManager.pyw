@@ -270,6 +270,15 @@ def _nsz_curves(ole, acf, ch_from, ch_to):
     return out
 
 
+def _plausible_fit(fit, acf, offset):
+    """True if `fit` (g2-1 at the channels from `offset`) follows the measured `acf` there: at least 5 values, between 0
+    and 1.2, and within 0.1 rms of it. Stops a stream of another layout (e.g. a 16-float header) from being drawn as a fit."""
+    fit = np.asarray(fit, float)
+    ref = np.asarray(acf[offset:offset + len(fit)], float)
+    return (len(fit) >= 5 and len(ref) == len(fit) and np.all(np.isfinite(fit)) and fit.max() <= 1.2
+            and fit.min() >= -0.1 and float(np.sqrt(np.mean((fit - ref) ** 2))) < 0.1)
+
+
 def _read_nsz(path, ole):
     def s(name):
         return ole.openstream(name).read() if ole.exists(name) else b''
@@ -304,6 +313,8 @@ def _read_nsz(path, ole):
     if 'fit' in curves:      # found by content: the Object numbers depend on the software version
         FIT_OFFSET, fit = ch_from - 1, list(curves['fit'])
         resid = list(curves['resid']) if 'resid' in curves else []
+    elif not _plausible_fit(fit, acf, FIT_OFFSET):
+        fit, resid = [], []      # Object10 of another software version: better no fit than a wrong one
 
     # Size distribution: 84 bins, with a different header length in each stream (17, 3 and 4 float32);
     # validated against the CSV exported by the instrument software (all three match to its rounding)

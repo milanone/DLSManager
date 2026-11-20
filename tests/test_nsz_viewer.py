@@ -103,6 +103,15 @@ class TestHelpers(unittest.TestCase):
         self.assertAlmostEqual(cumul[-1], 100.0)
         self.assertTrue(np.all(np.diff(cumul) >= 0))
 
+    def test_a_header_stream_is_not_taken_for_a_fit(self):
+        # 16-float header of another layout ([0 ... 0 1 0]): zeros with a 1, which was once drawn as a spike at 5 us
+        acf = np.exp(-np.linspace(0, 6, 43))
+        spike = np.zeros(13)
+        spike[11] = 1.0
+        self.assertFalse(nsz._plausible_fit(spike, acf, 0))
+        self.assertTrue(nsz._plausible_fit(acf[6:29] * 0.99, acf, 6))
+        self.assertFalse(nsz._plausible_fit([], acf, 6))
+
     def test_missing_olefile_message(self):
         with mock.patch.object(nsz, "OLEFILE_AVAILABLE", False):
             with self.assertRaises(ImportError):
