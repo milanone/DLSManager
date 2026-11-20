@@ -490,7 +490,7 @@ DLS_TIPS = {
                 "The light one particle scatters is averaged over the scattering angle +- this value, which washes out "
                 "the narrow interference minima of a single angle; without it, a small tail of the distribution sitting "
                 "at such a minimum becomes a spurious peak in volume and number. The value for the SZ-100 is not known: "
-                "10 is an assumption. 0 = the single angle, at most 45. The minimum is only removed by an aperture of about 30 "
+                "the default is 0 (the single angle), at most 45. The minimum is only removed by an aperture of about 30 "
                 "degrees or more, wider than a real detector: it is a smoothing, not a physical correction.",
     'pn': "Refractive index of the particle for the 'Mie' conversion (a solid sphere). Empty: the value stored in the "
           "file, set in the instrument software (1.6 by default). Not used by 'Mie shell' (which has its own "
@@ -709,7 +709,7 @@ def mie_shell_intensity(d_nm, wavelength_nm, n_medium, shell_dn, shell_nm, angle
     return out
 
 
-DLS_APERTURE = 10.0      # default half-width (degrees) of the detector's angular acceptance; an assumption, not an SZ-100 value
+DLS_APERTURE = 0.0       # default half-width (degrees) of the detector's angular acceptance: 0 = the single angle (the SZ-100's value is unknown)
 
 
 def dls_per_particle(d, conversion, rec, wavelength, n_particle, shell=(4.5, 0.12), aperture=0.0):
@@ -1870,7 +1870,7 @@ class DLSManager:
                        f"{inst('ZAvg_nm', '{:.1f}')} nm, PI {inst('PDI', '{:.3f}')}{diff}")
         w = weight.lower()
         by_int = weight == DLS_WEIGHTS[0]
-        apt = f", aperture ±{self._aperture():g}°"
+        apt = f", aperture ±{self._aperture():g}°" if self._aperture() > 0 else ""
         how = {"Mie": f"Mie, particle n {self._particle_index(self.samples[path]):g}{apt}",
                "Mie shell": "Mie shell, %d lamella%s (shell %.3g nm, index excess %.3g%s)" % (
                    self._shell_params()[0], "e" if self._shell_params()[0] > 1 else "", *self._shell(), apt)}.get(conv, "Rayleigh (d^6)")

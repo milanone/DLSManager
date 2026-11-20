@@ -112,11 +112,11 @@ instrument's width therefore says nothing about the sample, while the program's 
 resolution). Also, the diameters in the instrument's table are bin upper edges: its mean is exactly the table's mean
 divided by √1.1298 (the bin ratio) in all 29 files, so its stated mode and mean sit about 6% below the plotted peak.
 
-The Mie conversion averages the light one particle scatters over a detector aperture (±10° by default, an entry in the tab;
-the SZ-100's own value is not known), because at a single angle the interference minima of Mie theory (for a latex at 90°, one
-near 350 nm) turn the small tail of a free distribution into a spurious peak in volume and number. This reduces the artefact but does not
-remove it: on the 130 nm latex the volume distribution still has a smaller peak near 350 nm at ±10° (a wider aperture reduces it
-further). On synthetic data built from the lot certificate (number distribution 130 ± 14 nm) the one-peak model recovers the number
+The Mie conversion can average the light one particle scatters over a detector aperture (an entry in the tab, 0° = the single
+angle by default; the SZ-100's own value is not known), because at a single angle the interference minima of Mie theory (for a latex at 90°, one
+near 350 nm) turn the small tail of a free distribution into a spurious peak in volume and number. It reduces that peak but does not
+remove it: on the 130 nm latex the volume distribution still has a smaller peak near 350 nm at ±10° and ±20°, and it only vanishes at
+±30° or more, wider than a real detector, so it is a smoothing and not a correction (hence the default of 0°). On synthetic data built from the lot certificate (number distribution 130 ± 14 nm) the one-peak model recovers the number
 and volume means (130 and 134 nm), while the free distribution widens the peak and gives a number mean 27% low: volume and number
 depend on the width of the distribution, which DLS resolves worst.
 

@@ -109,7 +109,7 @@ instrument's 413/380. `ChannelsCumuFrom/To` (1-41) and `FlAutoChannels` (2) are 
 Detector aperture (2026-11-20): Francesco's screenshot of the free distribution of latex 1a400 by volume showed a spurious peak at ~356 nm.
 Cause: the free inversion leaves a tail (19% of the maximum at 350 nm for a 130 nm latex) and the Mie intensity of one particle at 90 degrees
 has a deep minimum at ~350 nm (2.1 against 10.9 at 250 nm, relative to 130 nm = 1), so d^3 / I1 multiplies the tail by ~5. `dls_per_particle(...,
-aperture=)` now averages the Mie / Mie shell intensity over angle +- aperture (9 angles; `DLS_APERTURE` = 10, the tab's 'Aperture' entry,
+aperture=)` now averages the Mie / Mie shell intensity over angle +- aperture (9 angles; `DLS_APERTURE` = 0 since Francesco's decision the same day (it was 10; the single angle is the default, the entry stays as an option; the text under the plot names the aperture only when it is above 0), the tab's 'Aperture' entry,
 `_aperture()`, shared by both Mie conversions through the `"Mie|Mie shell"` key of `_conv_fields`, shown in the text under the plot). The aperture
 of the SZ-100 is NOT known: 10 is an assumption. Checked in the real window on `_0834`: at +-10 the volume mode moves from 356 to 95 nm and the
 mean from 177 to 161 nm, but the peak at ~350 nm REMAINS (0.83 of the maximum; it ends at the 5% tail cut); numerically +-20 reduces it to
