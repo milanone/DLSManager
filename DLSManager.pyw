@@ -522,7 +522,7 @@ def dls_invert(tau, acf, q2, temp_c, visc_mpas, alpha=1.0, gmin=0.1, dmin=10.0, 
                tau_max=np.inf):
     """Intensity-weighted size distribution by regularised non-negative least squares: g1 = sum_j p_j exp(-Gamma_j t)
     with p >= 0 on a log grid of diameters, weighted by g1 and a second-difference smoothing penalty alpha. Returns
-    (diameters nm, p normalised to sum 1, fitted g1 at all delays). Needs scipy (nnls)."""
+    (diameters nm, p normalised to sum 1, fitted g1 at all delays, with the intercept free). Needs scipy (nnls)."""
     from scipy.optimize import nnls
     tau, acf = np.asarray(tau, float), np.asarray(acf, float)
     g1 = np.sqrt(np.clip(acf, 0, None))
@@ -533,8 +533,9 @@ def dls_invert(tau, acf, q2, temp_c, visc_mpas, alpha=1.0, gmin=0.1, dmin=10.0, 
     w = g1[sel]
     L = np.diff(np.eye(ngrid), 2, axis=0)
     p, _ = nnls(np.vstack([K * w[:, None], alpha * L]), np.concatenate([g1[sel] * w, np.zeros(ngrid - 2)]))
-    p = p / p.sum()
-    return d, p, np.exp(-np.outer(tau, gam)) @ p
+    # the sum of the weights is the intercept of g1 at zero delay: it is fitted, not forced to 1 (the stored ACF starts
+    # near 0.99), so the fit below is p unnormalised; only the distribution that is returned is normalised
+    return d, p / p.sum(), np.exp(-np.outer(tau, gam)) @ p
 
 
 def dls_fit_peaks(tau, acf, q2, temp_c, visc_mpas, n_peaks=2, gmin=0.05, dmin=10.0, dmax=1e4, ngrid=160,
@@ -1584,7 +1585,15 @@ class DLSManager:
                             ax1.plot(ft, np.sqrt(np.clip(d['fit'][:len(ft)], 0, None)), '-', lw=1.3,
                                      color=c)[0]._cursor_name = name + " fit"
                     else:
-                        ax1.plot(tau, r['fit'], '-', lw=1.3, color=c)[0]._cursor_name = name + " fit"
+                        # the line only spans the delays that the inversion used: g1 above its minimum, delays of at least
+                        # 1 us and, with the option, the instrument's channels (not the whole axis)
+                        used = (g1 > gmin) & (tau >= 1.0)
+                        if rng:
+                            used &= ~out_of
+                        idx = np.nonzero(used)[0]
+                        if len(idx) > 1:
+                            sl = slice(idx[0], idx[-1] + 1)
+                            ax1.plot(tau[sl], r['fit'][sl], '-', lw=1.3, color=c)[0]._cursor_name = name + " fit"
                 # ---- size distribution
                 if inst:
                     sz = d['sz']

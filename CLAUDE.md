@@ -70,6 +70,13 @@ The recomputed analysis takes a moment, so `_plot_dist` returns early for that s
 `_refresh_dls`). In the Instrument source volume/number use the same conversion as the Recomputed one (`dls_reweight` with the per-particle
 intensity on the file's diameters; Rayleigh if the file lacks angle/index); `_to_number_dist` remains for the Excel export. The Autocorrelogram tab
 has a g1 / g2-1 switch (`acf_quantity`, default g1: the earlier g2-1 plot looked different from the Recomputed correlogram, which is g1).
+Fit curves of the Recomputed source (2026-11-20, after Francesco's remarks): the free model's fit is `K @ p` with p unnormalised, so its intercept at zero delay is
+fitted (the stored ACF starts at 0.96-0.99) instead of being forced to 1 (it was `K @ (p / sum p)`); the distribution returned is still normalised.
+The fit line is drawn only over the delays the inversion used (g1 above its minimum, delays of at least 1 us, and the instrument's channels when
+that option is on), not over the whole axis. Checked and not adopted: cumulants over the instrument's channels give a Z-average and PI that are
+no closer to the instrument's (450 nm liposomes PI 0.175 instead of 0.354 against 0.383), so they still use g1 > 0.3. The latex PI is 0.149
+here against 0.033 for the instrument: the instrument's cumulant method is not reproduced.
+
 Cursor bar: `PlotCursor` (one per figure: `cur_acf`, `cur_size`): left click/drag puts a red vertical line in the clicked panel, with a box
 listing each labelled curve's interpolated value (curves whose label starts with `_` are named by the attribute `_cursor_name`, set on the
 fit lines); ignored while a toolbar tool is active (`toolbar.mode`); right click removes it. The plot methods rebuild the figure with

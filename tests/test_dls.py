@@ -62,6 +62,17 @@ class TestCumulants(unittest.TestCase):
 
 @unittest.skipUnless(HAS_SCIPY, "scipy not installed")
 class TestDistributions(unittest.TestCase):
+    def test_the_free_model_fits_the_intercept_of_g1(self):
+        # a correlogram that starts at 0.9, not 1: the fit has to start there too (it was forced to 1)
+        rec = record([100.0], [1.0])
+        rec['acf'] = rec['acf'] * 0.9 ** 2 / 0.99 ** 2
+        r = nsz.dls_analyse(rec, nsz.DLS_MODELS[0])
+        used = rec['tau'] >= 1e-6
+        first = np.nonzero(used)[0][0]
+        self.assertAlmostEqual(r['fit'][first], 0.9 * np.sqrt(1.0) * (np.exp(-1e-6 * nsz._dls_gamma(100.0, nsz.dls_q2(173.0, 1.333), 25.0, 0.8963))), delta=0.02)
+        self.assertLess(r['fit'][first], 0.95)
+        self.assertAlmostEqual(r['p'].sum(), 1.0)             # the distribution itself stays normalised
+
     def test_regularised_peak_is_at_the_true_size(self):
         r = nsz.dls_analyse(record([100.0], [1.0]), nsz.DLS_MODELS[0])
         self.assertAlmostEqual(r['p'].sum(), 1.0, places=6)
@@ -467,6 +478,18 @@ class TestDlsTab(unittest.TestCase):
         app.dls_weight.set("Intensity")
         app._plot_dls()
         self.assertEqual(app.ray_warn.cget("text"), "")
+
+    def test_the_recomputed_fit_line_spans_only_the_points_that_were_used(self):
+        app = self.app
+        app.size_source.set("Recomputed"); app.notebook.select(app.tab_size)
+        app._plot_dist()
+        fit = [ln for ln in app.fig_size.axes[0].lines if getattr(ln, "_cursor_name", "").endswith("fit")][0]
+        sample = app.samples['s.nsz']
+        tau, g1 = sample['tau'], np.sqrt(np.clip(sample['acf'], 0, None))
+        x = np.asarray(fit.get_xdata())
+        self.assertGreaterEqual(x.min(), 1.0)                          # delays below 1 us are not used
+        self.assertLess(x.max(), tau.max())                            # nor the tail below g1 min: not the whole axis
+        self.assertTrue(np.all(g1[np.isin(tau, x)] > 0.1 - 1e-9))
 
     def test_the_source_selector_swaps_the_two_plots(self):
         app = self.app
