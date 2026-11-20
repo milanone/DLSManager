@@ -17,13 +17,13 @@ pythonw DLSManager.pyw [file.nsz ...]
 py -m unittest discover -s tests -v
 ```
 
-Sample data: `example data/` holds a software CSV (changed 2026-11-20 by Francesco to `lipo 100 1a10 in PBS_0845.csv`; gitignored:
-real data, never commit). **Its header names `..._0843.nsz`, not `_0845`**: the `.nsz` next to it is another replicate, so the
-tests (`find_sample()` in `tests/test_nsz_viewer.py`) read the `.nsz` named in the CSV and look for it next to the CSV, then in the
-`spettri di esempio` folders of LabSpectrumManager (where `_0843` is). Putting `lipo 100 1a10 in PBS_0843.nsz` into `example data/`
-would make the folder self-contained. The earlier sample (`lipo_bup_MLV_0minson_scattering_0729.nsz` + `_0731.csv`, June layout) is
-only in the Drive mirror's history. Tk tests need a screen; tests that need the sample are skipped without it. The three
-`screenshot*.png` are the real program with the `_0845` file (window grabbed with `CopyFromScreen`, cropped).
+Sample data: `example data/` holds `lipo 100 1a10 in PBS_0843.nsz` and the software CSV of the same measurement
+(`..._0843.csv`; gitignored: real data, never commit). On 2026-11-20 the folder had a CSV named `_0845` next to the `_0845` .nsz, but
+the CSV was of measurement 0843 (its header, its time 18:03:04 and all its values match the 0843 file, not 0845): Francesco
+replaced the pair with 0843 + its CSV. `find_sample()` in `tests/test_nsz_viewer.py` reads the .nsz named in the CSV (next to it, else in
+the `spettri di esempio` folders of LabSpectrumManager). The earlier sample (`lipo_bup_MLV_0minson_scattering_0729.nsz` + `_0731.csv`, June
+layout, PI 0.6) is gone from the folder; its results are described below. Tk tests need a screen; tests that need the sample are skipped
+without it. The three `screenshot*.png` are the real program with the 0843 file (window grabbed with `CopyFromScreen`, cropped).
 
 ## Architecture
 
