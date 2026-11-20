@@ -6,7 +6,7 @@ Drive mirror, how he works) are in `..\CLAUDE.md`; this file has the project-spe
 
 ## Purpose
 
-Tkinter program (**DLS Manager**, formerly NSZ Viewer; renamed 2026-11-20 together with the file `DLSManager.pyw` and the class `DLSManager`; the repository and folder are still called DLS-Horiba / DLS Horiba) for the `.nsz` files of the **Horiba SZ-100** dynamic light scattering (DLS) instrument: DLS analysis of the correlogram, correlation
+Tkinter program (**DLS Manager**, formerly NSZ Viewer; renamed 2026-11-20 together with the file `DLSManager.pyw` and the class `DLSManager`; the repository and folder were renamed from DLS-Horiba / DLS Horiba to DLSManager the same day) for the `.nsz` files of the **Horiba SZ-100** dynamic light scattering (DLS) instrument: DLS analysis of the correlogram, correlation
 function, size distribution, parameters table, multi-sample overlay, Excel export, figure save/edit. The format was
 reverse-engineered, so the parser is checked against the CSV exported by the instrument software.
 
