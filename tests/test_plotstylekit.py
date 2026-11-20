@@ -39,7 +39,7 @@ class TestWithAndWithoutPlotStyleKit(unittest.TestCase):
         self.saved = (nsz.psk, nsz.PSK_PROBLEM, nsz.PSK_CONFIG)
         nsz.PSK_CONFIG = os.path.join(self.tmp.name, "psk.json")           # never touch the real ~/.plotstylekit.json
         self.addCleanup(self._restore)
-        self.app = nsz.NSZViewer(self.root)
+        self.app = nsz.DLSManager(self.root)
         d = synthetic_sample("a")
         self.app.samples[d["path"]] = d
         self.app.listbox.insert(tk.END, "a.nsz")

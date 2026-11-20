@@ -17,7 +17,7 @@ from unittest import mock
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-spec = importlib.util.spec_from_file_location("nsz", os.path.join(HERE, "..", "nsz_viewer.pyw"))
+spec = importlib.util.spec_from_file_location("nsz", os.path.join(HERE, "..", "DLSManager.pyw"))
 nsz = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(nsz)
 
@@ -77,7 +77,7 @@ class TestHelpers(unittest.TestCase):
     def test_number_distribution(self):
         sz = np.array([0.0, 10.0, 100.0, 1000.0])
         intens = np.array([5.0, 10.0, 10.0, 10.0])
-        num, cumul = nsz.NSZViewer._to_number_dist(sz, intens)
+        num, cumul = nsz.DLSManager._to_number_dist(sz, intens)
         self.assertAlmostEqual(num.sum(), 100.0)
         self.assertEqual(num[0], 0.0)                         # zero diameter contributes nothing
         self.assertGreater(num[1], num[2])                    # N is proportional to I / d^6: small particles dominate
@@ -98,7 +98,7 @@ class TestHelpers(unittest.TestCase):
         import openpyxl
         with tempfile.TemporaryDirectory() as d:
             out = os.path.join(d, "x.xlsx")
-            nsz.NSZViewer._write_xlsx(out, synthetic_sample())
+            nsz.DLSManager._write_xlsx(out, synthetic_sample())
             wb = openpyxl.load_workbook(out)
         self.assertEqual(wb.sheetnames, ["ACF", "Intensity distribution", "Number distribution", "Parameters"])
         self.assertEqual([c.value for c in wb["ACF"][1]], ["tau (µs)", "g2-1 exp", "g2-1 fit", "Residual"])
@@ -201,7 +201,7 @@ class TestApplication(unittest.TestCase):
         cls.root.destroy()
 
     def setUp(self):
-        self.app = nsz.NSZViewer(self.root)
+        self.app = nsz.DLSManager(self.root)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
 

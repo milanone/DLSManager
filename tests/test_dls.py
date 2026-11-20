@@ -10,7 +10,7 @@ import unittest
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-spec = importlib.util.spec_from_file_location("nsz", os.path.join(HERE, "..", "nsz_viewer.pyw"))
+spec = importlib.util.spec_from_file_location("nsz", os.path.join(HERE, "..", "DLSManager.pyw"))
 nsz = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(nsz)
 
@@ -302,7 +302,7 @@ class TestDlsTab(unittest.TestCase):
         cls.root.destroy()
 
     def setUp(self):
-        self.app = nsz.NSZViewer(self.root)
+        self.app = nsz.DLSManager(self.root)
         acf = correlogram([100.0], [1.0])
         d = {'path': 's.nsz', 'name': 's', 'tau': TAU * 1e6, 'acf': acf, 'tau_aligned': True,
              'fit': acf[6:], 'resid': acf[6:] * 0, 'fit_offset': 6, 'sz': np.logspace(0, 3, 84),

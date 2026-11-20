@@ -1,5 +1,5 @@
 """
-NSZ Viewer — Horiba SZ-100 DLS file browser & plotter
+DLS Manager — Horiba SZ-100 DLS: .nsz viewer, correlogram analysis and size distributions
 Supports drag & drop, multiple-sample comparison, Excel export.
 The plots follow the shared Origin style of PlotStyleKit when the sibling repo is present.
 """
@@ -669,10 +669,10 @@ def dls_record(d):
 
 # ── Main application ──────────────────────────────────────────────────────────
 
-class NSZViewer:
+class DLSManager:
     def __init__(self, root):
         self.root = root
-        self.root.title("NSZ Viewer — Horiba SZ-100")
+        self.root.title("DLS Manager — Horiba SZ-100")
         self.root.geometry("1380x840")
         if psk is None and not _psk_config().get('declined'):
             self.root.after(400, lambda: self._offer_plotstylekit(PSK_PROBLEM))
@@ -710,7 +710,7 @@ class NSZViewer:
         sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=0, pady=0)
         sidebar.pack_propagate(False)
 
-        tk.Label(sidebar, text="NSZ Viewer", font=("Helvetica", 15, "bold"),
+        tk.Label(sidebar, text="DLS Manager", font=("Helvetica", 15, "bold"),
                  fg="white", bg="#1E293B").pack(pady=(18,4))
         tk.Label(sidebar, text="Horiba SZ-100 DLS", font=("Helvetica", 9),
                  fg="#94A3B8", bg="#1E293B").pack(pady=(0,14))
@@ -1537,7 +1537,7 @@ class NSZViewer:
             ws_sz.cell(ri, 3, round(float(cv), 4)).font = cell_font
 
         # ── Number distribution sheet (Rayleigh: N ∝ I/d⁶) ────────────────────
-        num_freq, num_cumul = NSZViewer._to_number_dist(d['sz'], d['intens'])
+        num_freq, num_cumul = DLSManager._to_number_dist(d['sz'], d['intens'])
         ws_nb = wb.create_sheet('Number distribution')
         for ci, h in enumerate(['Diameter (nm)', 'Number (%)', 'Cumulative (%)'], 1):
             style_header(ws_nb.cell(1, ci), h)
@@ -1778,7 +1778,7 @@ def main():
         root = tk.Tk()
         print("Note: tkinterdnd2 not available, drag & drop disabled.")
 
-    app = NSZViewer(root)
+    app = DLSManager(root)
 
     if not OLEFILE_AVAILABLE:
         messagebox.showwarning("Missing dependency",

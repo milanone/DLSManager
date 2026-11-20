@@ -6,14 +6,14 @@ Drive mirror, how he works) are in `..\CLAUDE.md`; this file has the project-spe
 
 ## Purpose
 
-Tkinter viewer for the `.nsz` files of the **Horiba SZ-100** dynamic light scattering (DLS) instrument: DLS analysis of the correlogram, correlation
+Tkinter program (**DLS Manager**, formerly NSZ Viewer; renamed 2026-11-20 together with the file `DLSManager.pyw` and the class `DLSManager`; the repository and folder are still called DLS-Horiba / DLS Horiba) for the `.nsz` files of the **Horiba SZ-100** dynamic light scattering (DLS) instrument: DLS analysis of the correlogram, correlation
 function, size distribution, parameters table, multi-sample overlay, Excel export, figure save/edit. The format was
 reverse-engineered, so the parser is checked against the CSV exported by the instrument software.
 
 ## Running / tests
 
 ```bash
-pythonw nsz_viewer.pyw [file.nsz ...]
+pythonw DLSManager.pyw [file.nsz ...]
 py -m unittest discover -s tests -v
 ```
 
@@ -23,8 +23,8 @@ without it. The two `screenshot*.png` are the real program with that sample (`Im
 
 ## Architecture
 
-Single file `nsz_viewer.pyw`: parser functions (`f32`, `parse_props`, `load_nsz` / `_read_nsz`, `dump_nsz` for
-debugging) and the class `NSZViewer` (sidebar with sample list, a `ttk.Notebook` with Autocorrelogram / Distribution /
+Single file `DLSManager.pyw`: parser functions (`f32`, `parse_props`, `load_nsz` / `_read_nsz`, `dump_nsz` for
+debugging) and the class `DLSManager` (sidebar with sample list, a `ttk.Notebook` with Autocorrelogram / Distribution /
 Parameters tabs, two matplotlib `Figure`s `fig_acf` and `fig_size`). `self.samples = {path: data dict}`, `self.selected`
 = paths shown. `_plot_acf` / `_plot_size` redraw on every control change, `_update_params_table` fills the table (up to 5
 samples), `_write_xlsx` writes one workbook per sample, `_to_number_dist` converts intensity to number distribution
@@ -57,7 +57,7 @@ Module-level functions after the parser: `dls_q2`, `_dls_gamma`, `dls_cumulants`
 (regularised NNLS, 10-3000 nm, alpha 1, g1 > 0.1), `dls_fit_peaks` (1 or 2 log-normal peaks, free intercept of g1, delays below
 1 µs left out because the stored ACF drops ~1% after its first point and a fit reads that as a 3-5% peak at 3-16 nm, sigma >= 0.05,
 BIC), `dls_analyse`, `dls_record(d)` (delays in seconds and the conditions read from the file: angle, solvent n, viscosity,
-temperature; None if the delays are not aligned). Wavelength is an entry (532, also `Lambda_nm` of the file). `NSZViewer._plot_dls`
+temperature; None if the delays are not aligned). Wavelength is an entry (532, also `Lambda_nm` of the file). `DLSManager._plot_dls`
 draws g1 with the fit and the intensity distribution for all selected samples and `_dls_summary` writes the comparison with the
 instrument (Z-average, PI, mean, mode, S.D.). It runs only while the tab is shown (`_refresh_dls`, `<<NotebookTabChanged>>`) and caches
 results in `_dls_cache`; changing the model resets g1 min (0.1 regularised, 0.05 peaks). `ToolTip` gives the help texts (`DLS_TIPS`).
@@ -108,7 +108,7 @@ the distribution are not reliable beyond the Z-average. Not done: the DLS result
 
 ## PlotStyleKit
 
-Found by the common bootstrap block near the top of `nsz_viewer.pyw` (the same text as in PlotStyleKit's README: change it
+Found by the common bootstrap block near the top of `DLSManager.pyw` (the same text as in PlotStyleKit's README: change it
 there, not here): `psk` is its integration module `plotstylekit.py` or None, `PSK_PROBLEM` says why. If it is not found and
 the user has not declined, `_offer_plotstylekit()` asks for the folder 400 ms after the window opens; File > PlotStyleKit...
 (`plotstylekit_dialog()`) changes it later and replots (`_refresh_all`, because the sample colours change too).

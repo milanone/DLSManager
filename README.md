@@ -1,8 +1,9 @@
-# DLS-Horiba
+# DLS Manager
 
-Desktop viewer for `.nsz` files from the **Horiba SZ-100** dynamic light scattering (DLS)
-instrument. It reads the binary files directly, without the instrument software, plots the
-correlation function and the particle size distribution, compares several samples, and
+Desktop program for the `.nsz` files of the **Horiba SZ-100** dynamic light scattering (DLS) instrument
+(formerly "NSZ Viewer"). It reads the binary files directly, without the instrument software, plots the
+correlation function and the particle size distribution, compares several samples, analyses the stored
+correlogram again (cumulants, free and log-normal size distributions by intensity, volume and number) and
 exports everything to Excel.
 
 > **Unofficial.** This project is not affiliated with or endorsed by Horiba. The `.nsz`
@@ -47,7 +48,7 @@ exports everything to Excel.
 
 ```
 pip install -r requirements.txt
-pythonw nsz_viewer.pyw [file.nsz ...]
+pythonw DLSManager.pyw [file.nsz ...]
 ```
 
 `pythonw` starts it without a console window (`python` keeps one).
