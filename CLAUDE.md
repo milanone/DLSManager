@@ -122,6 +122,10 @@ certificate, 1229748_C37485.pdf in `example data/`) is recovered exactly by the 
 the free inversion widens sigma(ln d) from 0.10 to 0.31 and gives number 95 nm: the number mean is ~exp(-k sigma^2) times the intensity
 median, so it depends on the width that DLS resolves worst.
 
+Diameter axis (2026-11-20): the distribution and cumulative panels use the same limits for both sources, 10 to 1e4 nm (log) or 0 to 1000 nm (linear); the
+instrument's table starts at 0.34 nm and the recomputed grid at 10 nm. The limits are set AGAIN after `_style_figure()`, because PlotStyleKit's style()
+autoscales x tight to the data and would undo them (it ignores a caller's xlim unless the aspect is locked; extending it would touch every host app).
+
 Width selector (2026-11-20, Francesco's idea: treat the computed distribution as 'broad' and offer 'medium' / 'narrow'): `DLS_WIDTHS` = Broad 1 /
 Medium 0.7 / Narrow 0.5, `dls_narrow(d, p, factor)` contracts the free distribution in ln d around its mean ln d (sigma x factor, centre kept),
 applied in `_weighted()` BEFORE the tail cut, to every weighting of the free model, the intensity one included (first version: volume and number only;

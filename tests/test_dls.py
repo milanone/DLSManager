@@ -493,6 +493,20 @@ class TestDlsTab(unittest.TestCase):
         self.assertLess(float(text.split("S.D. ")[1].split(" nm")[0]), 0.7 * i_broad)
         app.dls_width.set("Broad")
 
+    def test_both_sources_share_the_diameter_axis(self):
+        app = self.app
+        app.notebook.select(app.tab_size)
+        app.show_cumul.set(True)
+        try:
+            for scale, lim in (("log", (10.0, 1e4)), ("linear", (0.0, 1000.0))):
+                app.size_xscale.set(scale)
+                for src in ("Instrument", "Recomputed"):
+                    app.size_source.set(src); app._on_source()
+                    for ax in app.fig_size.axes[1:]:                   # the distribution and the cumulative panels
+                        self.assertEqual(ax.get_xlim(), lim, (scale, src))
+        finally:
+            app.size_xscale.set("log"); app.show_cumul.set(False)
+
     def test_recomputed_distribution_is_drawn_with_points_like_the_instrument_one(self):
         app = self.app
         app.notebook.select(app.tab_size)

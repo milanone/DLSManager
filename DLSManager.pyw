@@ -1698,6 +1698,10 @@ class DLSManager:
         ax1.set_ylabel("$g_1$ = √ACF")
         ax1.set_title("Correlogram and fit", fontweight='bold')
         ax2.set_xscale(xscale)
+        # the same diameter axis for both sources: the instrument's table starts at 0.34 nm and the recomputed grid at
+        # 10 nm, and nothing below 10 nm is measurable here; up to 1e4 nm (the table ends at 8510)
+        size_xlim = (10.0, 1e4) if xscale == 'log' else (0.0, 1000.0)
+        ax2.set_xlim(*size_xlim)
         ax2.set_xlabel("Diameter (nm)")
         ax2.set_ylabel(f"{weight}-weighted (normalised)")
         ax2.set_title(f"Size distribution by {weight.lower()}", fontweight='bold')
@@ -1709,6 +1713,7 @@ class DLSManager:
             ax2.legend(fontsize=8, loc='upper right', framealpha=0.9)
         if axc is not None:
             axc.set_xscale(xscale)
+            axc.set_xlim(*size_xlim)
             axc.set_xlabel("Diameter (nm)")
             axc.set_ylabel("Cumulative (%)")
             axc.set_title(f"Cumulative distribution by {weight.lower()}", fontweight='bold')
@@ -1725,6 +1730,10 @@ class DLSManager:
         self._show_warnings([self._volnum_warning(weight), self._rayleigh_warning(ray_items, weight, conv)] + peak_warn)
         self._set_dls_text(lines)
         self._style_figure(fig)
+        # PlotStyleKit's style() autoscales x tight to the data, which undoes the limits set above: set them again
+        ax2.set_xlim(*size_xlim)
+        if axc is not None:
+            axc.set_xlim(*size_xlim)
         self.cur_size.attach()
         self.canvas_size.draw()
 
