@@ -3,3 +3,4 @@ matplotlib
 olefile
 openpyxl         # Excel export
 tkinterdnd2     # optional: drag-and-drop of files
+scipy          # optional: DLS analysis tab (size distribution from the correlogram)

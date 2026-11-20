@@ -6,7 +6,7 @@ Drive mirror, how he works) are in `..\CLAUDE.md`; this file has the project-spe
 
 ## Purpose
 
-Tkinter viewer for the `.nsz` files of the **Horiba SZ-100** dynamic light scattering (DLS) instrument: correlation
+Tkinter viewer for the `.nsz` files of the **Horiba SZ-100** dynamic light scattering (DLS) instrument: DLS analysis of the correlogram, correlation
 function, size distribution, parameters table, multi-sample overlay, Excel export, figure save/edit. The format was
 reverse-engineered, so the parser is checked against the CSV exported by the instrument software.
 
@@ -35,7 +35,7 @@ samples), `_write_xlsx` writes one workbook per sample, `_to_number_dist` conver
 | Stream | Content and how it is read |
 |---|---|
 | `Object3` | lag times: 16 header floats, then tau (µs); trailing repeated baseline channels are cut where tau stops increasing (43 -> 37 channels in the sample) |
-| `Object2` | correlation: 3 header floats, then one value per channel. These are **g1 squared** (g2-1): the software's CSV g1 equals `sqrt(value)` to 5e-7, CSV row k = channel 7 + k |
+| `Object2` | correlation (same numbers as `OriginalACF`): 3 header floats, then one value per channel. These are **g1 squared** (g2-1): the software's CSV g1 equals `sqrt(value)` to 5e-7, CSV row k = channel 7 + k |
 | `Object10` | fit: header `[1][n_fit][fit_offset]`, then values; `fit_offset` (6) = initial channels excluded from the fit; also g1 squared, CSV fit row k = `sqrt(fit[k+1])` |
 | `Object7` | residuals (same offset as the fit); correlated (0.83) with the CSV residual of g1, not equal |
 | `Object5` | diameters: 17 header floats, then 84 bins |
@@ -50,6 +50,24 @@ Details that matter: diameter fields (`CalcMean`, `CalcPeakPos`, `CalcPerDiamete
 lengths (16, 2, 2 instead of 17, 3, 4), so the diameter and intensity arrays were shifted by one bin (a spurious 0.30 nm
 first bin, the last bin 8510 nm dropped) and the cumulative curve was shifted by one bin against the diameters. The
 header lengths above reproduce all three CSV columns exactly (to the CSV rounding).
+
+## DLS analysis (tab `DLS analysis`, ported from LabSpectrumManager)
+
+Module-level functions after the parser: `dls_q2`, `_dls_gamma`, `dls_cumulants` (quadratic fit of ln g1, g1 > 0.3), `dls_invert`
+(regularised NNLS, 10-3000 nm, alpha 1, g1 > 0.1), `dls_fit_peaks` (1 or 2 log-normal peaks, free intercept of g1, delays below
+1 µs left out because the stored ACF drops ~1% after its first point and a fit reads that as a 3-5% peak at 3-16 nm, sigma >= 0.05,
+BIC), `dls_analyse`, `dls_record(d)` (delays in seconds and the conditions read from the file: angle, solvent n, viscosity,
+temperature; None if the delays are not aligned). Wavelength is an entry (532, also `Lambda_nm` of the file). `NSZViewer._plot_dls`
+draws g1 with the fit and the intensity distribution for all selected samples and `_dls_summary` writes the comparison with the
+instrument (Z-average, PI, mean, mode, S.D.). It runs only while the tab is shown (`_refresh_dls`, `<<NotebookTabChanged>>`) and caches
+results in `_dls_cache`; changing the model resets g1 min (0.1 regularised, 0.05 peaks). `ToolTip` gives the help texts (`DLS_TIPS`).
+The figure is saved/edited like the others (`fig_dls`, preset `double`). Tests: `tests/test_dls.py` (synthetic correlograms of
+known sizes, the real sample, the tab).
+
+Verified in LabSpectrumManager on four files: Z-average within 1-2%; PI lower than the instrument's; the two-peak split is ill-posed
+and only sensible for sizes ~3x apart. Verified here on the one sample (PI 0.6): Z-average +4.2%, PI 0.44 against 0.60; the free
+inversion has its mode at the 3000 nm limit and the peak fits reach sigma 1.2 (bound), so for this aggregated sample the sizes of
+the distribution are not reliable beyond the Z-average. Not done: the DLS results are not in the Excel export.
 
 ## Verified / not verified
 
