@@ -122,6 +122,16 @@ certificate, 1229748_C37485.pdf in `example data/`) is recovered exactly by the 
 the free inversion widens sigma(ln d) from 0.10 to 0.31 and gives number 95 nm: the number mean is ~exp(-k sigma^2) times the intensity
 median, so it depends on the width that DLS resolves worst.
 
+Width selector (2026-11-20, Francesco's idea: treat the computed distribution as 'broad' and offer 'medium' / 'narrow'): `DLS_WIDTHS` = Broad 1 /
+Medium 0.7 / Narrow 0.5, `dls_narrow(d, p, factor)` contracts the free distribution in ln d around its mean ln d (sigma x factor, centre kept),
+applied in `_weighted()` BEFORE the tail cut and only for volume and number of the free model (the intensity distribution is never narrowed; the
+peak models are not affected); the text says 'narrowed x0.5 in ln d (assumption)'. Default Broad (no hidden prior). Checked on the certificate's latex
+(number 130 nm, volume ~134): number mean for Broad/Medium/Narrow: `_0841` 106/121/130 (0.5) , `_0838` 93/114/127, `_0834` 91/117/134, `_0836` 100/122/136;
+the spurious volume peaks (356 nm) vanish at 0.5 and the volume is one peak at 134-150 nm; at 1a800 (Z 166 nm) number 154 nm at 0.5. In the real
+window on `_0834`: Narrow gives volume mode 142 nm, mean 150, one peak. On synthetic data narrowing x0.35 of a sigma-0.31 distribution recovers the
+number mean of the true sigma-0.10 one to 3% (`TestNarrow`). It is a prior about the sample: a truly broad one (450 nm liposomes, PI 0.38) is
+narrowed wrongly, which is why it is a choice and not the default.
+
 Why the instrument's distribution differs from ours (investigated 2026-11-20, 29 files of LabSpectrumManager's `spettri di esempio`): the
 stored intensity distribution is NOT the inversion of the stored fit. (1) Its width is constant: always 10-11 non-zero bins, sigma of ln d
 0.22-0.28 (skew ~0.1), for PI 0.014-0.38; only the position moves (centre/Z 1.02-1.09, 1.38 for the 450 nm liposomes). (2) The instrument's fit

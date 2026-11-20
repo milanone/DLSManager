@@ -479,6 +479,13 @@ DLS_TIPS = {
              "whose index excess is the lipid's (0.12, an order-of-magnitude value) averaged over the water gaps. The "
              "diameter is the outer one. The light one vesicle scatters grows about as d^4 at small sizes instead of "
              "d^6. Only used by the 'Mie shell' conversion.",
+    'width': "Free (regularised) distribution only, for volume and number. Broad: the distribution as computed. Medium "
+             "and Narrow: it is narrowed in ln d around its centre (width x 0.7 and x 0.5) before the conversion. The "
+             "regularised inversion smooths and widens the true distribution, and volume and number depend strongly on "
+             "the width, so a narrower distribution gives numbers closer to a narrow sample (a latex of 10% CV: number "
+             "mean 130 nm with Narrow, 90-100 nm with Broad). It is an assumption about the sample, not a result: for a "
+             "truly broad sample (liposomes, aggregates) it narrows what is really wide. The intensity distribution "
+             "is never narrowed.",
     'aperture': "Half-width of the angular range over which the detector collects light, degrees (Mie and Mie shell). "
                 "The light one particle scatters is averaged over the scattering angle +- this value, which washes out "
                 "the narrow interference minima of a single angle; without it, a small tail of the distribution sitting "
@@ -770,6 +777,24 @@ def dls_reweight_weights(d, p, kind, per_particle):
     d = np.asarray(d, float)
     return np.asarray(p, float) * {"Intensity": 1.0, "Volume": d ** 3, "Number": 1.0}[kind] / (
         1.0 if kind == "Intensity" else np.asarray(per_particle, float))
+
+
+DLS_WIDTHS = {"Broad": 1.0, "Medium": 0.7, "Narrow": 0.5}   # factor on the width (sigma of ln d) of the free distribution
+
+
+def dls_narrow(d, p, factor):
+    """`p` (weights on the log grid `d`) narrowed by `factor` (< 1) in ln d around its mean ln d, then normalised to sum 1:
+    q(ln d) = p(m + (ln d - m) / factor) / factor, so its sigma(ln d) is factor times the original and its centre stays.
+    1 (or more) returns p normalised. The regularised inversion is a smoothed, broad version of the true distribution
+    (on a synthetic 130 +- 14 nm latex it gives sigma 0.31 for a true 0.10), and number and volume depend on the width
+    through about exp(-k sigma^2): narrowing before the conversion is an ASSUMPTION about the sample, not a result."""
+    p = np.asarray(p, float)
+    if factor >= 1:
+        return p / p.sum()
+    lnd = np.log(np.asarray(d, float))
+    m = np.sum(p * lnd) / np.sum(p)
+    q = np.interp(m + (lnd - m) / factor, lnd, p, left=0.0, right=0.0)
+    return q / q.sum()
 
 
 def dls_floor(p, fraction):
@@ -1216,6 +1241,13 @@ class DLSManager:
         ent.pack(side=tk.LEFT)
         ent.bind("<Return>", lambda e: self._plot_dist())
         self._tips.extend(ToolTip(w, DLS_TIPS['tail']) for w in (lab, ent))
+        lab = tk.Label(ctrl2, text="Width for volume / number", bg=bg, font=fnt)
+        lab.pack(side=tk.LEFT, padx=(12, 2))
+        self.dls_width = tk.StringVar(value="Broad")
+        cmb = ttk.Combobox(ctrl2, textvariable=self.dls_width, values=list(DLS_WIDTHS), state="readonly", width=8)
+        cmb.pack(side=tk.LEFT)
+        cmb.bind("<<ComboboxSelected>>", lambda e: self._plot_dist())
+        self._tips.extend(ToolTip(w, DLS_TIPS['width']) for w in (lab, cmb))
         btn = tk.Button(ctrl2, text="Compute", command=self._plot_dist, bg="#FEF9C3", font=fnt)
         btn.pack(side=tk.LEFT, padx=12)
 
@@ -1764,8 +1796,14 @@ class DLSManager:
 
     def _weighted(self, r, weight, i1):
         """Distribution `r` of dls_analyse() in the chosen weighting (the tail cut applies to the free model)."""
-        p = r['p'] if r['peaks'] is not None or weight == DLS_WEIGHTS[0] else dls_floor(r['p'], self._tail_fraction())
+        p = r['p']
+        if r['peaks'] is None and weight != DLS_WEIGHTS[0]:
+            p = dls_floor(dls_narrow(r['d'], p, self._width_factor()), self._tail_fraction())
         return dls_reweight(r['d'], p, weight, i1)
+
+    def _width_factor(self):
+        """Factor on the width of the free distribution chosen in the tab (1 = as computed)."""
+        return DLS_WIDTHS.get(self.dls_width.get(), 1.0)
 
     def _particle_index(self, d):
         """Refractive index of the particle: the value typed in the tab, else the one in the file, else 1.59."""
@@ -1838,7 +1876,9 @@ class DLSManager:
                    self._shell_params()[0], "e" if self._shell_params()[0] > 1 else "", *self._shell(), apt)}.get(conv, "Rayleigh (d^6)")
         if r['peaks'] is None:
             mean, mode, sd = dls_stats(r['d'], self._weighted(r, weight, i1))
-            out.append(f"  Regularised distribution by {w} (α = {alpha:g}{'' if by_int else f', tail cut {100 * self._tail_fraction():g}%'}): mean {mean:.0f} nm, mode {mode:.0f} nm, "
+            narrowed = '' if by_int or self._width_factor() >= 1 else (
+                f', narrowed ×{self._width_factor():g} in ln d (assumption)')
+            out.append(f"  Regularised distribution by {w} (α = {alpha:g}{'' if by_int else f', tail cut {100 * self._tail_fraction():g}%'}{narrowed}): mean {mean:.0f} nm, mode {mode:.0f} nm, "
                        f"S.D. {sd:.0f} nm" + (f"  |  instrument mean {inst('Mean1_nm', '{:.0f}')}, "
                        f"mode {inst('Mode_nm', '{:.0f}')}, S.D. {inst('SD1_nm', '{:.0f}')} nm" if by_int else
                        f"  ({how} conversion from the intensity distribution)"))

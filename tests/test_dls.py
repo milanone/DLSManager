@@ -323,6 +323,41 @@ class TestWeighting(unittest.TestCase):
         self.assertGreater(mode_v, mode_n)
 
 
+class TestNarrow(unittest.TestCase):
+    D = np.geomspace(10, 3000, 400)
+
+    def _lognormal(self, median, sigma):
+        p = np.exp(-0.5 * ((np.log(self.D) - np.log(median)) / sigma) ** 2)
+        return p / p.sum()
+
+    def _sigma(self, p):
+        lnd = np.log(self.D)
+        return float(np.sqrt(np.sum(p * (lnd - np.sum(p * lnd)) ** 2)))
+
+    def test_narrowing_scales_sigma_and_keeps_the_centre(self):
+        p = self._lognormal(150.0, 0.3)
+        for f in (0.7, 0.5):
+            q = nsz.dls_narrow(self.D, p, f)
+            self.assertAlmostEqual(q.sum(), 1.0)
+            self.assertAlmostEqual(self._sigma(q), 0.3 * f, delta=0.005)
+            self.assertAlmostEqual(float(np.exp(np.sum(q * np.log(self.D)))), 150.0, delta=1.5)
+
+    def test_factor_one_leaves_the_distribution_alone(self):
+        p = self._lognormal(150.0, 0.3)
+        np.testing.assert_allclose(nsz.dls_narrow(self.D, p, 1.0), p)
+
+    def test_number_mean_of_a_narrow_sample_recovered_by_narrowing_a_broadened_distribution(self):
+        # the true number distribution is narrow (sigma 0.10); the regularised inversion gives sigma 0.31 around the same
+        # intensity median. Number mean ~ median x exp(-6 sigma^2): 130 with the true width, ~73% of it with the broad one.
+        true = self._lognormal(137.0, 0.10)
+        broad = self._lognormal(137.0, 0.31)
+        n_true = nsz.dls_stats(self.D, nsz.dls_reweight(self.D, true, "Number"))[0]
+        n_broad = nsz.dls_stats(self.D, nsz.dls_reweight(self.D, broad, "Number"))[0]
+        n_narrow = nsz.dls_stats(self.D, nsz.dls_reweight(self.D, nsz.dls_narrow(self.D, broad, 0.35), "Number"))[0]
+        self.assertLess(n_broad, 0.75 * n_true)
+        self.assertAlmostEqual(n_narrow, n_true, delta=0.03 * n_true)
+
+
 @unittest.skipUnless(HAS_SCIPY, "scipy not installed")
 class TestInstrumentRange(unittest.TestCase):
     def test_range_limits_the_points_the_inversion_uses(self):
@@ -431,6 +466,28 @@ class TestDlsTab(unittest.TestCase):
         self.app.dls_conv.set("Rayleigh")
         self.app._plot_dls()
         self.assertIn("Rayleigh", self.app.dls_text.get("1.0", "end"))
+
+    def test_width_selector_narrows_volume_and_number_only(self):
+        app = self.app
+        app.size_source.set("Recomputed"); app.notebook.select(app.tab_size)
+        app.dls_model.set(nsz.DLS_MODELS[0])
+        app.dls_conv.set("Rayleigh")
+        app.dls_weight.set("Number")
+        app.dls_width.set("Broad")
+        app._plot_dls()
+        broad = app.dls_text.get("1.0", "end")
+        self.assertNotIn("narrowed", broad)
+        app.dls_width.set("Narrow")
+        app._plot_dls()
+        narrow = app.dls_text.get("1.0", "end")
+        self.assertIn("narrowed ×0.5", narrow)
+        s_broad = float(broad.split("S.D. ")[1].split(" nm")[0])
+        s_narrow = float(narrow.split("S.D. ")[1].split(" nm")[0])
+        self.assertLess(s_narrow, s_broad)
+        app.dls_weight.set("Intensity")                                # the intensity distribution is never narrowed
+        app._plot_dls()
+        self.assertNotIn("narrowed", app.dls_text.get("1.0", "end"))
+        app.dls_width.set("Broad")
 
     def test_aperture_in_the_tab(self):
         app = self.app

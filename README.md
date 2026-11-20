@@ -120,6 +120,13 @@ further). On synthetic data built from the lot certificate (number distribution 
 and volume means (130 and 134 nm), while the free distribution widens the peak and gives a number mean 27% low: volume and number
 depend on the width of the distribution, which DLS resolves worst.
 
+The *Width for volume / number* choice (free distribution only) narrows the computed intensity distribution in ln d around its
+centre before the conversion: Broad leaves it as computed, Medium and Narrow multiply its width by 0.7 and 0.5. The regularised
+inversion widens a narrow sample, and volume and number depend on the width through roughly exp(−kσ²). On the latex of the lot certificate
+(number mean 130 nm) Narrow gives number means of 127-136 nm and a single volume peak for four of the files, against 91-106 nm and a
+spurious second volume peak with Broad. It is an assumption about the sample (a truly broad one, such as extruded liposomes with a PI of
+0.4, is narrowed wrongly), shown in the text under the plot, and it is off by default. The intensity distribution is never narrowed.
+
 Volume and number weightings are conversions of the fitted intensity distribution, not measurements. Mie theory is the
 default (homogeneous sphere, no absorption, vertical polarisation; the code reproduces Qext = Qsca and S(0) from an
 independent computation with scipy's Bessel functions, but it was not compared with the instrument's own volume/number
