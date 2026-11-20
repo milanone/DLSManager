@@ -35,6 +35,11 @@ exports everything to Excel.
   with the refractive index of the particle stored in the file or typed, or a vesicle as a shell around a core of medium
   with a chosen thickness and index) or with the Rayleigh approximation (d⁶). The instrument's own mean, mode and S.D.
   are shown only for intensity.
+- **Cursor bar** on every plot: click or drag in a panel to put a vertical bar there; a box lists the value of each curve
+  at the bar (the pan/zoom tools of the toolbar take precedence while active), right click removes it. The bar is left out
+  of saved figures. In the distribution plots the vertical dotted line is the median (D50) of the instrument's distribution,
+  the dashed lines of the cumulative plot are D10, D50 and D90, and in the recomputed plot the dotted line is the Z-average
+  from the cumulants (all named in the legend).
 - **Parameters** tab: date, solvent, scattering angle, wavelength, temperature, viscosity,
   refractive index, peak and mean sizes, SD, D10/D50/D90, mode, median, Z-average, PDI and span.
 - **Excel export**: one `.xlsx` per sample with sheets for the ACF (data, fit, residuals),

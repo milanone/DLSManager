@@ -360,6 +360,73 @@ class TestApplication(unittest.TestCase):
             self.app._export_xlsx()
         self.assertTrue(os.path.isfile(os.path.join(self.tmp.name, "b.xlsx")))
 
+    def _mouse(self, canvas, name, ax, x, y, button=1):
+        """Send a matplotlib mouse event at data coordinates (x, y) of `ax`."""
+        from matplotlib.backend_bases import MouseEvent
+        px, py = ax.transData.transform((x, y))
+        canvas.callbacks.process(name, MouseEvent(name, canvas, px, py, button=button))
+
+    def test_cursor_bar_reads_the_curves_and_follows_the_mouse(self):
+        self.add_synthetic("a", "b")
+        self.app.notebook.select(self.app.tab_acf)
+        self.root.update()
+        cv, ax = self.app.canvas_acf, self.app.fig_acf.axes[0]
+        self._mouse(cv, "button_press_event", ax, 1000.0, 0.5)
+        cur = self.app.cur_acf
+        self.assertAlmostEqual(cur.x, 1000.0, delta=1.0)
+        self.assertIsNotNone(cur.line)
+        text = cur.box.get_text()
+        self.assertIn("x = 1000", text)
+        self.assertIn("a:", text)
+        self.assertIn("b fit:", text)                           # the unlabelled fit curves are named
+        self._mouse(cv, "motion_notify_event", ax, 5000.0, 0.5)
+        self.assertAlmostEqual(cur.x, 5000.0, delta=5.0)
+        self._mouse(cv, "button_release_event", ax, 5000.0, 0.5)
+        self._mouse(cv, "motion_notify_event", ax, 20.0, 0.5)    # not dragging any more
+        self.assertAlmostEqual(cur.x, 5000.0, delta=5.0)
+        self.app._plot_acf()                                     # a redraw keeps the bar where it was
+        self.assertIsNotNone(cur.line)
+        self.assertAlmostEqual(cur.line.get_xdata()[0], cur.x)
+        self._mouse(cv, "button_press_event", self.app.fig_acf.axes[0], 100.0, 0.5, button=3)   # right click removes it
+        self.assertIsNone(cur.line)
+        self.assertIsNone(cur.x)
+
+    def test_cursor_bar_is_ignored_while_a_toolbar_tool_is_active_and_is_not_saved(self):
+        self.add_synthetic("a")
+        self.app.notebook.select(self.app.tab_acf)
+        cv, ax = self.app.canvas_acf, self.app.fig_acf.axes[0]
+        old_mode, cv.toolbar.mode = cv.toolbar.mode, "zoom rect"
+        try:
+            self._mouse(cv, "button_press_event", ax, 1000.0, 0.5)
+        finally:
+            cv.toolbar.mode = old_mode
+        self.assertIsNone(self.app.cur_acf.line)
+        self._mouse(cv, "button_press_event", ax, 1000.0, 0.5)
+        self._mouse(cv, "button_release_event", ax, 1000.0, 0.5)
+        self.assertIsNotNone(self.app.cur_acf.line)
+        out = os.path.join(self.tmp.name, "f.png")
+        with mock.patch.object(nsz.filedialog, "asksaveasfilename", return_value=out),                 mock.patch.object(nsz.messagebox, "showinfo"):
+            seen = []
+            real = self.app._copy_figure
+            self.app._copy_figure = lambda fig: (seen.append(self.app.cur_acf.line), real(fig))[1]
+            self.app.save_figure_image()
+        if nsz.psk is None:
+            self.assertEqual(seen, [None])                       # the bar was out of the figure during the copy
+        self.assertIsNotNone(self.app.cur_acf.line)              # and is back afterwards
+
+    def test_vertical_lines_are_explained_in_the_legend(self):
+        d = synthetic_sample("a")
+        self.app.samples[d["path"]] = d
+        self.app.listbox.insert(tk.END, "a.nsz")
+        self.app.listbox.selection_set(0)
+        self.app._on_select()
+        self.app.notebook.select(self.app.tab_size)
+        self.root.update()
+        labels = [t.get_text() for t in self.app.fig_size.axes[0].get_legend().get_texts()]
+        self.assertIn("D50 (median)", labels)
+        labels = [t.get_text() for t in self.app.fig_size.axes[1].get_legend().get_texts()]
+        self.assertIn("D10, D50, D90", labels)
+
     def test_loading_a_bad_file_reports_the_error(self):
         bad = os.path.join(self.tmp.name, "bad.nsz")
         with open(bad, "wb") as f:

@@ -66,6 +66,14 @@ intensity distributions and two different number conversions). Built by `_build_
 `_plot_dist` redraws the visible one (`_refresh_dls` plots the recomputed one only while the tab is shown), `_current_figure`
 returns `fig_size` or `fig_dls` by source. In the Instrument source volume/number use the same conversion as the Recomputed one (`dls_reweight`
 with the per-particle intensity on the file's diameters; Rayleigh if the file lacks angle/index); `_to_number_dist` remains for the Excel export.
+Cursor bar: `PlotCursor` (one per figure: `cur_acf`, `cur_size`, `cur_dls`): left click/drag puts a red vertical line in the clicked
+panel, with a box listing each labelled curve's interpolated value (curves with a label starting with `_` are named by the attribute
+`_cursor_name`, set on the unlabelled fit lines); ignored while a toolbar tool is active (`toolbar.mode`); right click removes it. The
+plot methods rebuild the figure with `fig.clear()`, so each calls `cur.attach()` before `canvas.draw()`; the decorator `_no_cursor` takes
+the bar out of the figure around Save Figure Image / Save Figure (pickle) / Edit Figure (they copy the figure). Vertical lines in the plots:
+D50 (dotted, instrument distribution), D10/D50/D90 (dashed, cumulative), Z-average (dotted, recomputed distribution), each with a
+proxy entry in the legend. Tests: `TestApplication.test_cursor_*` send matplotlib mouse events.
+
 The Recomputed part, in detail:
 
 Module-level functions after the parser: `dls_q2`, `_dls_gamma`, `dls_cumulants` (quadratic fit of ln g1, g1 > 0.3), `dls_invert`

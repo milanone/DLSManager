@@ -786,6 +786,134 @@ def dls_record(d):
     return rec
 
 
+class PlotCursor:
+    """A movable vertical bar over a figure, to read the values of the curves. Left click or drag in a panel puts the bar
+    there (the pan/zoom tools of the toolbar take precedence while they are active); right click removes it. A box
+    in the panel lists, for every labelled curve, its value at the bar (interpolated; a curve that does not reach the bar
+    is skipped). The figure is cleared and redrawn by the plot methods, so they call attach() afterwards, which puts
+    the bar back at the same place; remove() takes it out of the figure (before saving or editing a copy)."""
+
+    def __init__(self, canvas):
+        self.canvas, self.fig = canvas, canvas.figure
+        self.x = None              # position in data coordinates
+        self.panel = None          # index of the axes that holds the bar
+        self.line = self.box = None
+        self._drag = False
+        canvas.mpl_connect('button_press_event', self._press)
+        canvas.mpl_connect('motion_notify_event', self._move)
+        canvas.mpl_connect('button_release_event', self._release)
+
+    def _tool_active(self):
+        mode = getattr(getattr(self.canvas, 'toolbar', None), 'mode', '')
+        return bool(getattr(mode, 'value', mode))
+
+    def remove(self):
+        for art in (self.line, self.box):
+            try:
+                if art is not None:
+                    art.remove()
+            except (ValueError, NotImplementedError, AttributeError):
+                pass
+        self.line = self.box = None
+
+    def attach(self):
+        """Put the bar back after the figure was rebuilt; forget it if its panel or position no longer exists."""
+        self.line = self.box = None
+        if self.x is None or self.panel is None:
+            return
+        if self.panel >= len(self.fig.axes) or not self._inside(self.fig.axes[self.panel], self.x):
+            self.x = self.panel = None
+            return
+        self._create(self.fig.axes[self.panel])
+
+    @staticmethod
+    def _inside(ax, x):
+        lo, hi = sorted(ax.get_xlim())
+        return lo <= x <= hi
+
+    def _create(self, ax):
+        self.line = ax.axvline(self.x, color='#DC2626', lw=1.0, alpha=0.85, zorder=10)
+        self.box = ax.text(0.02, 0.98, '', transform=ax.transAxes, va='top', ha='left', fontsize=8, zorder=11,
+                           bbox=dict(boxstyle='round,pad=0.3', fc='white', ec='#94A3B8', alpha=0.92))
+        self._update(ax)
+
+    def readout(self, ax):
+        """Text of the box: the position and the value of each labelled curve at the bar."""
+        rows = ["x = %.4g" % self.x]
+        for ln in ax.lines:
+            if ln is self.line:
+                continue
+            name = ln.get_label()
+            if name.startswith('_'):
+                name = getattr(ln, '_cursor_name', None)
+            xd, yd = np.asarray(ln.get_xdata(), float), np.asarray(ln.get_ydata(), float)
+            if not name or len(xd) < 3 or len(xd) != len(yd):
+                continue
+            ok = np.isfinite(xd) & np.isfinite(yd)
+            xd, yd = xd[ok], yd[ok]
+            if len(xd) < 3 or not xd.min() <= self.x <= xd.max():
+                continue
+            order = np.argsort(xd)
+            rows.append("%s: %.4g" % (name[:40], np.interp(self.x, xd[order], yd[order])))
+        return "\n".join(rows[:9])
+
+    def _update(self, ax):
+        self.line.set_xdata([self.x, self.x])
+        self.box.set_text(self.readout(ax))
+
+    def _press(self, event):
+        if event.inaxes is None or self._tool_active() or event.xdata is None:
+            return
+        if event.button == 3:                      # right click: remove the bar
+            self.remove()
+            self.x = self.panel = None
+            self.canvas.draw_idle()
+            return
+        if event.button != 1:
+            return
+        panel = self.fig.axes.index(event.inaxes)
+        self.x = float(event.xdata)
+        if self.line is None or panel != self.panel:
+            self.remove()
+            self.panel = panel
+            self._create(event.inaxes)
+        else:
+            self._update(event.inaxes)
+        self._drag = True
+        self.canvas.draw_idle()
+
+    def _move(self, event):
+        if not self._drag or event.inaxes is None or event.xdata is None or self.line is None:
+            return
+        if self.fig.axes.index(event.inaxes) != self.panel:
+            return
+        self.x = float(event.xdata)
+        self._update(event.inaxes)
+        self.canvas.draw_idle()
+
+    def _release(self, event):
+        self._drag = False
+
+
+def _no_cursor(method):
+    """Run a figure-saving method of the application with the bar taken out of the figure, then put it back."""
+    import functools
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        fig = self._current_figure()
+        cur = self._cursor_of(fig) if fig is not None else None
+        if cur is not None:
+            cur.remove()
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            if cur is not None:
+                cur.attach()
+                cur.canvas.draw_idle()
+    return wrapper
+
+
 # ── Main application ──────────────────────────────────────────────────────────
 
 class DLSManager:
@@ -939,6 +1067,7 @@ class DLSManager:
         self.canvas_acf = FigureCanvasTkAgg(self.fig_acf, self.tab_acf)
         NavigationToolbar2Tk(self.canvas_acf, self.tab_acf).pack(side=tk.BOTTOM, fill=tk.X)
         self.canvas_acf.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
+        self.cur_acf = PlotCursor(self.canvas_acf)
 
     def _build_size_tab(self):
         """One tab for the size distribution. Source 'Instrument': the distribution stored in the file (and its
@@ -1002,6 +1131,7 @@ class DLSManager:
         self.canvas_size = FigureCanvasTkAgg(self.fig_size, self.box_inst)
         NavigationToolbar2Tk(self.canvas_size, self.box_inst).pack(side=tk.BOTTOM, fill=tk.X)
         self.canvas_size.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
+        self.cur_size = PlotCursor(self.canvas_size)
 
         self.box_rec = tk.Frame(self.tab_size, bg=bg)
         ctrl = tk.Frame(self.box_rec, bg=bg)
@@ -1045,6 +1175,7 @@ class DLSManager:
         self.canvas_dls = FigureCanvasTkAgg(self.fig_dls, self.box_rec)
         NavigationToolbar2Tk(self.canvas_dls, self.box_rec).pack(side=tk.BOTTOM, fill=tk.X)
         self.canvas_dls.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
+        self.cur_dls = PlotCursor(self.canvas_dls)
         self._on_source()
 
     def _on_source(self):
@@ -1252,7 +1383,7 @@ class DLSManager:
                 tau_fit = tau[off:off + len(d['fit'])]
                 fit_vals = d['fit'][:len(tau_fit)]
                 ax.plot(tau_fit, fit_vals, '-', color=c, linewidth=1.5,
-                        alpha=0.85)
+                        alpha=0.85)[0]._cursor_name = lbl + " fit"
 
             # Residuals — same offset as the fit
             if axr is not None and len(d['resid']) > 2:
@@ -1285,6 +1416,7 @@ class DLSManager:
                     fontsize=12, color='#94A3B8')
 
         self._style_figure(self.fig_acf)
+        self.cur_acf.attach()
         self.canvas_acf.draw()
 
     # ── Distribution plot ─────────────────────────────────────────────────────
@@ -1378,6 +1510,8 @@ class DLSManager:
         ax.set_ylabel(f"{weight} (%)", fontsize=10)
         ax.set_title(f"Size distribution by {repr_lbl}", fontsize=11, fontweight='bold')
         if self.selected:
+            if by_int:
+                ax.plot([], [], ':', color='gray', lw=0.9, label='D50 (median)')
             ax.legend(fontsize=8, loc='upper right', framealpha=0.9)
 
         if axc is not None:
@@ -1390,6 +1524,8 @@ class DLSManager:
             axc.axhline(50, color='gray', linewidth=0.5, linestyle=':')
             axc.axhline(90, color='gray', linewidth=0.5, linestyle=':')
             if self.selected:
+                if by_int:
+                    axc.plot([], [], '--', color='gray', lw=0.8, label='D10, D50, D90')
                 axc.legend(fontsize=8, loc='upper left', framealpha=0.9)
 
         if not self.selected:
@@ -1398,6 +1534,7 @@ class DLSManager:
                     fontsize=12, color='#94A3B8')
 
         self._style_figure(self.fig_size)
+        self.cur_size.attach()
         self.canvas_size.draw()
 
     # ── DLS analysis ──────────────────────────────────────────────────────────
@@ -1468,7 +1605,7 @@ class DLSManager:
                     ax1.semilogx(rec['tau'][~out_of] * 1e6, g1[~out_of], 'o', ms=3, color=c, label=name)
                 else:
                     ax1.semilogx(rec['tau'] * 1e6, g1, 'o', ms=3, color=c, label=name)
-                ax1.semilogx(rec['tau'] * 1e6, r['fit'], '-', lw=1.3, color=c)
+                ax1.semilogx(rec['tau'] * 1e6, r['fit'], '-', lw=1.3, color=c)[0]._cursor_name = name + " fit"
                 i1 = self._dls_i1(d, rec, r['d'], conv, wl) if weight != DLS_WEIGHTS[0] else None
                 pw = self._weighted(r, weight, i1)
                 ax2.plot(r['d'], pw / pw.max(), '-', lw=1.6, color=c, label=name)
@@ -1486,11 +1623,15 @@ class DLSManager:
         ax2.set_title(f"Size distribution by {weight.lower()}", fontweight='bold')
         if self.selected and ax1.get_legend_handles_labels()[0]:
             ax1.legend(fontsize=8, loc='upper right', framealpha=0.9)
+        if self.selected and any(ln.get_linestyle() == ':' for ln in ax2.lines):
+            ax2.plot([], [], ':', color='gray', lw=1, label='Z-average (cumulants)')
+            ax2.legend(fontsize=8, loc='upper right', framealpha=0.9)
         if not self.selected:
             ax1.text(0.5, 0.5, "No sample selected\n\nLoad .nsz files and select them in the list",
                      ha='center', va='center', transform=ax1.transAxes, fontsize=12, color='#94A3B8')
         self._set_dls_text(lines)
         self._style_figure(self.fig_dls)
+        self.cur_dls.attach()
         self.canvas_dls.draw()
 
     def _tail_fraction(self):
@@ -1808,6 +1949,11 @@ class DLSManager:
             return self.fig_size if self.size_source.get() == SIZE_SOURCES[0] else self.fig_dls
         return None
 
+    def _cursor_of(self, fig):
+        """The PlotCursor of one of the three figures."""
+        return {id(self.fig_acf): self.cur_acf, id(self.fig_size): self.cur_size,
+                id(self.fig_dls): self.cur_dls}.get(id(fig))
+
     @staticmethod
     def _preset_for(fig):
         """'single' (4:3) for one panel, 'double' (16:9) for two."""
@@ -1826,6 +1972,7 @@ class DLSManager:
             messagebox.showwarning(title, "Select samples and open the Autocorrelogram or Size distribution tab.")
         return fig
 
+    @_no_cursor
     def save_figure_image(self):
         fig = self._figure_or_warn("Save Figure Image")
         if fig is None:
@@ -1846,6 +1993,7 @@ class DLSManager:
             return
         messagebox.showinfo("Save Figure Image", f"Figure saved (plain look: PlotStyleKit is not in use):\n{path}")
 
+    @_no_cursor
     def save_figure_pickle(self):
         """Save the figure as a matplotlib pickle: reopenable with plot_editor.pyw as a live Figure object."""
         fig = self._figure_or_warn("Save Figure")
@@ -1868,6 +2016,7 @@ class DLSManager:
             return
         messagebox.showinfo("Save Figure", f"Figure saved (not restyled: PlotStyleKit is not in use):\n{path}")
 
+    @_no_cursor
     def open_figure_editor(self):
         """Open the PlotStyleKit Plot Editor on a copy of the current figure."""
         fig = self._figure_or_warn("Edit Figure")
