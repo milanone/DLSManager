@@ -64,6 +64,14 @@ results in `_dls_cache`; changing the model resets g1 min (0.1 regularised, 0.05
 The figure is saved/edited like the others (`fig_dls`, preset `double`). Tests: `tests/test_dls.py` (synthetic correlograms of
 known sizes, the real sample, the tab).
 
+Weighting selector (`dls_reweight`, `dls_reweight_peaks`, `dls_stats`, `DLS_WEIGHTS`): volume = p / d^3, number = p / d^6 on the
+log grid (Rayleigh, the same as `_to_number_dist`); for log-normal peaks the median moves by exp(-k sigma^2) and the share by
+exp(-k mu + k^2 sigma^2 / 2) (checked against the grid in `TestWeighting`). Instrument values are shown only for intensity (the
+file's mean/mode are intensity-based; its number/volume tables were never located). Not done: Mie conversion with the particle index
+(`MeasSampleRef`, 1.6 in the file), which is what the instrument uses; Rayleigh is off for particles above ~100 nm. Checked on the
+latex: one-peak median 140 / 116 / 96 nm (intensity / volume / number); with the 2-peak model or the regularised fit on 90 degree
+files a spurious small peak dominates volume and number (median 3 nm), hence the note in the text.
+
 Verified on 15 polystyrene latex measurements (the `20261119 DLS lattice e liposomi` folder of LabSpectrumManager, 130 nm by TEM;
 `tests/test_dls.py::TestLatex` uses the three at 173 degrees and skips without them): Z-average -4.0..+0.3% of the instrument's
 (within 1% in 12), regularised mode 142 nm = the instrument's at 173 degrees, one peak median 140 nm with sigma ~0.25 and no

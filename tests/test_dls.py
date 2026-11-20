@@ -168,6 +168,42 @@ class TestLatex(unittest.TestCase):
             self.assertLess(one['bic'] - two['bic'], 6)        # a second peak is not supported
 
 
+class TestWeighting(unittest.TestCase):
+    def test_reweight_matches_rayleigh_and_normalises(self):
+        d = np.array([10.0, 100.0])
+        p = np.array([0.5, 0.5])
+        vol = nsz.dls_reweight(d, p, "Volume")
+        num = nsz.dls_reweight(d, p, "Number")
+        self.assertAlmostEqual(vol.sum(), 1.0)
+        self.assertAlmostEqual(vol[0] / vol[1], 1000.0, places=6)         # (100/10)^3
+        self.assertAlmostEqual(num[0] / num[1], 1e6, places=3)            # (100/10)^6
+        np.testing.assert_allclose(nsz.dls_reweight(d, p, "Intensity"), p)
+
+    def test_peaks_shift_by_exp_k_sigma_squared_and_agree_with_the_grid(self):
+        peaks = [{'median': 60.0, 'sigma': 0.2, 'fraction': 0.3}, {'median': 400.0, 'sigma': 0.15, 'fraction': 0.7}]
+        for kind, k in (("Volume", 3), ("Number", 6)):
+            new = nsz.dls_reweight_peaks(peaks, kind)
+            self.assertAlmostEqual(new[0]['median'], 60.0 * np.exp(-k * 0.04), places=6)
+            self.assertAlmostEqual(sum(pk['fraction'] for pk in new), 1.0)
+            # the same on a grid: share of the small peak after dividing the intensity by d^k
+            d = np.geomspace(5, 1e4, 4000)
+            lnd = np.log(d)
+            g = [pk['fraction'] * np.exp(-0.5 * ((lnd - np.log(pk['median'])) / pk['sigma']) ** 2) /
+                 (pk['sigma'] * np.sqrt(2 * np.pi)) for pk in peaks]
+            w = [gi / d ** k for gi in g]
+            self.assertAlmostEqual(w[0].sum() / (w[0].sum() + w[1].sum()), new[0]['fraction'], places=3)
+
+    def test_number_weighting_moves_a_broad_distribution_to_smaller_sizes(self):
+        d = np.geomspace(10, 3000, 100)
+        p = np.exp(-0.5 * ((np.log(d) - np.log(300)) / 0.5) ** 2)
+        p /= p.sum()
+        mean_i, mode_i, _ = nsz.dls_stats(d, p)
+        mean_v, mode_v, _ = nsz.dls_stats(d, nsz.dls_reweight(d, p, "Volume"))
+        mean_n, mode_n, _ = nsz.dls_stats(d, nsz.dls_reweight(d, p, "Number"))
+        self.assertGreater(mode_i, mode_v)
+        self.assertGreater(mode_v, mode_n)
+
+
 @unittest.skipUnless(HAS_SCIPY, "scipy not installed")
 class TestDlsTab(unittest.TestCase):
     """The tab of the application, on a synthetic sample shaped like load_nsz() output (needs a screen)."""
@@ -207,6 +243,16 @@ class TestDlsTab(unittest.TestCase):
         text = self.app.dls_text.get("1.0", "end")
         self.assertIn("instrument", text)
         self.assertIn("Z-average", text)
+
+    def test_weighting_changes_the_plot_and_the_text(self):
+        self.app.notebook.select(self.app.tab_dls)
+        self.app.dls_weight.set("Number")
+        self.app._plot_dls()
+        self.assertEqual(self.app.fig_dls.axes[1].get_title(), "Size distribution by number")
+        self.assertIn("Rayleigh", self.app.dls_text.get("1.0", "end"))
+        self.app.dls_weight.set("Intensity")
+        self.app._plot_dls()
+        self.assertIn("instrument mean", self.app.dls_text.get("1.0", "end"))
 
     def test_models_and_invalid_settings(self):
         self.app.notebook.select(self.app.tab_dls)

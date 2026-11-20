@@ -26,7 +26,9 @@ exports everything to Excel.
 - **DLS analysis** tab: the stored correlogram is analysed again in the program, and the result is shown next to the
   instrument's values. Cumulants (Z-average and PI) from a quadratic fit of ln g₁; an intensity-weighted size distribution
   either free (regularised non-negative least squares) or as one or two log-normal peaks with a free intercept of g₁
-  and a BIC that says whether the second peak is supported. Needs `scipy`. See "Validation" for how far to trust it.
+  and a BIC that says whether the second peak is supported. Needs `scipy`.
+  The distribution can be shown by intensity, volume or number (divided by d³ and d⁶, Rayleigh approximation, as in the
+  Distribution tab; the peaks are converted analytically). The instrument's own values are shown only for intensity. See "Validation" for how far to trust it.
 - **Parameters** tab: date, solvent, scattering angle, wavelength, temperature, viscosity,
   refractive index, peak and mean sizes, SD, D10/D50/D90, mode, median, Z-average, PDI and span.
 - **Excel export**: one `.xlsx` per sample with sheets for the ACF (data, fit, residuals),
@@ -77,6 +79,13 @@ polydisperse sample of `example data/` (PI 0.6) the Z-average is 4% above the in
 the upper size limit (3000 nm) and the peak fits hit their width limit: the methods are at the edge of their validity for
 such a sample. The two-peak split is an ill-posed inversion: it is not stable between replicates and is only meaningful for sizes
 that differ by about 3 times or more; the BIC difference is shown for that reason.
+
+Volume and number weightings are Rayleigh conversions of the fitted intensity distribution, not measurements: they are
+exact only for particles much smaller than the wavelength in the medium (400 nm), and dividing by d³ or d⁶ amplifies the
+small-size side and any tail. On the 130 nm latex the one-peak number median is 96 nm (width σ 0.25 alone moves it by a
+factor 0.69), and where a fit is at its limit (σ 1.2, or the regularised mode at the edge of the grid) a spurious small peak
+takes over the volume and number distributions; the program says so in a note. The instrument uses Mie theory with the
+particle refractive index, which this program does not.
 
 ## Notes on the format
 
