@@ -138,8 +138,7 @@ class TestRealSample(unittest.TestCase):
 
     def test_correlation_matches_the_software_g1_squared(self):
         # The software exports g1; the file stores g1 squared. CSV row k is channel 7 + k (the 6 channels excluded from
-        # the fit plus one). The viewer drops the trailing baseline channels, so only the first rows can be compared;
-        # the CSV also floors g1 at 0.01, so compare only the values above the floor.
+        # the fit plus one); the CSV also floors g1 at 0.01, so compare only the values above the floor.
         acf = self.d["acf"][7:]
         g1_csv = self.corr_csv[:len(acf), 1]
         self.assertGreaterEqual(len(acf), 25)
@@ -164,10 +163,25 @@ class TestRealSample(unittest.TestCase):
         self.assertGreater(corr(1), 0.75)
         self.assertGreater(corr(1), max(corr(0), corr(2)))
 
+    def test_delays_are_matched_to_the_channels(self):
+        # Object3 lacks the first 6 delays: reading it paired channel 0 (0.1 us) with 1 us and dropped the last 6 points.
+        d = self.d
+        self.assertTrue(d["tau_aligned"])
+        self.assertEqual(len(d["tau"]), 43)
+        self.assertAlmostEqual(d["tau"][0], 0.1, places=5)
+        self.assertAlmostEqual(d["tau"][6], 1.0, places=5)     # channel 6 = first channel of the fit
+        self.assertAlmostEqual(d["tau"][-1], 108858.9, delta=0.5)
+        ole = nsz.olefile.OleFileIO(SAMPLE)                    # the legacy Object2 values are the same numbers
+        try:
+            obj2 = nsz.f32(ole.openstream("Object2").read())[3:46]
+        finally:
+            ole.close()
+        np.testing.assert_allclose(d["acf"], obj2, atol=1e-6)
+
     def test_correlation_function_shape(self):
         d = self.d
         self.assertEqual(len(d["tau"]), len(d["acf"]))
-        self.assertTrue(np.all(np.diff(d["tau"]) > 0))        # the repeated baseline channels were trimmed
+        self.assertTrue(np.all(np.diff(d["tau"]) > 0))
         self.assertEqual(d["fit_offset"], 6)
         self.assertEqual(len(d["fit"]), len(d["resid"]))
         self.assertLessEqual(len(d["fit"]) + d["fit_offset"], len(d["tau"]))

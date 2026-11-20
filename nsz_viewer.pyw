@@ -193,17 +193,49 @@ def load_nsz(path):
     finally:
         ole.close()
 
+def _nsz_correlogram(ole):
+    """(delay times in µs, normalised g2-1) from the float32 arrays 'Delay' (seconds) and 'OriginalACF', or None.
+    Each array sits in one stream, preceded by its byte length (u32) and its key name; the ACF has a few junk values
+    after the real ones, cut to the number of delays. Checked on the sample (43 channels, 0.1 µs to 0.109 s) and
+    on four other SZ-100 files in LabSpectrumManager."""
+    def arr(b, key):
+        m = re.search(re.escape(key) + b'\x00', b)
+        if not m or m.start() < 4:
+            return None
+        n = struct.unpack('<I', b[m.start() - 4:m.start()])[0]
+        if n % 4 or not 16 <= n <= 4 * 4096 or m.end() + n > len(b):
+            return None
+        return np.array(struct.unpack('<%df' % (n // 4), b[m.end():m.end() + n]), float)
+    for entry in ole.listdir(streams=True, storages=False):
+        b = ole.openstream(entry).read()
+        tau, acf = arr(b, b'Delay'), arr(b, b'OriginalACF')
+        if tau is None or acf is None or len(acf) < len(tau):
+            continue
+        acf = acf[:len(tau)]
+        if (np.all(np.isfinite(tau)) and np.all(tau > 0) and np.all(np.diff(tau) > 0) and np.all(np.isfinite(acf))
+                and acf.max() <= 1.5 and acf.min() >= -0.5):
+            return tau * 1e6, acf
+    return None
+
+
 def _read_nsz(path, ole):
     def s(name):
         return ole.openstream(name).read() if ole.exists(name) else b''
 
-    # ACF — trim the repeated baseline channels at the end (multi-tau correlator)
-    tau_full = f32(s('Object3'))[16:]
-    acf_full = f32(s('Object2'))[3:]
-    cut = next((i for i in range(1, len(tau_full)) if tau_full[i] <= tau_full[i-1]),
-               len(tau_full))
-    tau = tau_full[:cut]
-    acf = acf_full[:cut]
+    # ACF: all 43 channels, with their delays, from the 'Delay' / 'OriginalACF' arrays (see _nsz_correlogram).
+    # Object3 lacks the first 6 delays (0.1-0.7 us) while Object2 starts at channel 0, so pairing them
+    # shifts the x axis by 6 channels and drops the last 6 real points: it is only a fallback.
+    corr = _nsz_correlogram(ole)
+    tau_aligned = corr is not None
+    if tau_aligned:
+        tau, acf = corr
+    else:
+        tau_full = f32(s('Object3'))[16:]
+        acf_full = f32(s('Object2'))[3:]
+        cut = next((i for i in range(1, len(tau_full)) if tau_full[i] <= tau_full[i-1]),
+                   len(tau_full))
+        tau = tau_full[:cut]
+        acf = acf_full[:cut]
 
     # Horiba fit and residuals.
     # Object10 header: [int=1][int=n_fit][int=fit_offset], then the fit values.
@@ -280,7 +312,8 @@ def _read_nsz(path, ole):
         'fit':        np.array(fit,   dtype=float),
         'resid':      np.array(resid, dtype=float),
         'fit_offset': FIT_OFFSET,
-        'sz':         np.array(sz,    dtype=float),
+        'tau_aligned': tau_aligned,   # False: legacy Object3/Object2 pairing, delays not matched to the channels
+        'sz':        np.array(sz,    dtype=float),
         'intens':     np.array(intens,dtype=float),
         'cumul':      np.array(cumul, dtype=float),
         'params':     params,
