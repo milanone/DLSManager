@@ -32,8 +32,10 @@ exports everything to Excel.
 
   Both sources can be shown by intensity, volume or number, on a log or linear axis. Volume and number are converted
   from the intensity distribution with Mie theory (the light one particle scatters at the measurement angle; solid sphere
-  with the refractive index of the particle stored in the file or typed, or a vesicle as a shell around a core of medium
-  with a chosen thickness and index) or with the Rayleigh approximation (d⁶). The instrument's own mean, mode and S.D.
+  with the refractive index of the particle stored in the file or typed in *Particle n*; or a vesicle as a shell around a core
+  of medium, with a number of lamellae, the bilayer thickness, the repeat distance and the lipid's index excess) or with the
+  Rayleigh approximation (d⁶). The fields of the conversions not in use are greyed out, and Rayleigh shows a red warning when
+  more than 5% of the intensity is above the size where d⁶ is off by 10% (60-90 nm for a solid sphere of index 1.6 in water). The instrument's own mean, mode and S.D.
   are shown only for intensity.
 - **Cursor bar** on every plot: click or drag in a panel to put a vertical bar there; a box lists the value of each curve
   at the bar (the pan/zoom tools of the toolbar take precedence while active), right click removes it. The bar is left out

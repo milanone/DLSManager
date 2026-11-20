@@ -95,6 +95,14 @@ unrestricted); the tab's 'Instrument range' checkbox (on by default) draws the e
 (the g1 minimum already cuts the tail): 450 nm liposomes, mean/mode 453/475 with and without; it does not explain the gap to the
 instrument's 413/380. `ChannelsCumuFrom/To` (1-41) and `FlAutoChannels` (2) are also in the file, not used.
 
+Lamellae (2026-11-20): `_shell_params()` = (lamellae n, bilayer 4.5 nm, repeat distance 7 nm, lipid index excess 0.12; invalid -> these defaults), `_shell()` = the one
+equivalent shell: thickness n*rep-(rep-t), index excess dn*n*t/thickness (LabSpectrumManager's `vesicle_amplitude` model; n = 1 is the
+bilayer itself). 'Particle n' belongs to the 'Mie' conversion only; the fields of the other conversions are disabled (`_conv_fields`,
+`_on_conv`). `_rayleigh_limit()` finds the diameter where Mie/d^6 drops below 0.9 of its small-size value (87 nm for the 450 nm
+liposomes at 90 degrees, index 1.6; from the table: 10% off at ~60 nm at 90 degrees and ~50 nm at 173 degrees) and `_rayleigh_warning()` shows a red
+note (`ray_warn`) when Rayleigh is used for volume/number and more than 5% of the intensity lies above it. Real-window checks
+use the process's own window handle: a Tk combobox list is a popup that replaces `MainWindowHandle` while it is open.
+
 Mie shell conversion (`mie_shell_intensity`, `DLS_CONVERSIONS` 'Mie shell'): a vesicle as a coated sphere with a core of the medium, shell thickness (default 4.5 nm) and index excess (0.12), the defaults and the coefficients of LabSpectrumManager's vesicle model; the tab has the two entries on a third row. Checked: with a shell thicker than the radius it equals the solid-sphere Mie to 1e-6, and a thin shell scatters ~d^4 at small sizes (instead of d^6). Volume stays the outer-sphere volume d^3 (not the lipid volume). The shell parameters are order-of-magnitude assumptions (a multilamellar vesicle needs a larger thickness), and no instrument value was compared.
 
 Weighting selector (`dls_reweight`, `dls_reweight_peaks`, `dls_stats`, `dls_floor`, `DLS_WEIGHTS`, `DLS_CONVERSIONS`): number = p / I1,

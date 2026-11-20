@@ -6,6 +6,7 @@ and the real sample in 'example data/' against the values of the instrument (ski
 import importlib.util
 import os
 import sys
+import tkinter as tk
 import unittest
 
 import numpy as np
@@ -376,16 +377,61 @@ class TestDlsTab(unittest.TestCase):
         self.app._plot_dls()
         self.assertIn("Rayleigh", self.app.dls_text.get("1.0", "end"))
 
-    def test_mie_shell_conversion_in_the_tab(self):
-        self.app.size_source.set("Recomputed"); self.app.notebook.select(self.app.tab_size)
-        self.app.dls_weight.set("Number")
-        self.app.dls_conv.set("Mie shell")
-        self.app.dls_vars['shell_t'].set("9")
-        self.app._plot_dls()
-        self.assertIn("Mie shell, t 9 nm", self.app.dls_text.get("1.0", "end"))
-        self.app.dls_vars['shell_t'].set("abc")                       # invalid: back to the defaults
-        self.app._plot_dls()
-        self.assertIn("t 4.5 nm", self.app.dls_text.get("1.0", "end"))
+    def test_mie_shell_conversion_in_the_tab_with_lamellae(self):
+        app = self.app
+        app.size_source.set("Recomputed"); app.notebook.select(app.tab_size)
+        app.dls_weight.set("Number")
+        app.dls_conv.set("Mie shell")
+        app.dls_vars['shell_n'].set("7")                               # 7 x 7 nm repeat - 2.5 nm of water = 46.5 nm
+        app._plot_dls()
+        text = app.dls_text.get("1.0", "end")
+        self.assertIn("7 lamellae (shell 46.5 nm", text)
+        self.assertAlmostEqual(app._shell()[0], 46.5)
+        self.assertAlmostEqual(app._shell()[1], 0.12 * 7 * 4.5 / 46.5)   # the lipid's index averaged over the water gaps
+        app.dls_vars['shell_n'].set("abc")                             # invalid: back to one bilayer
+        app._plot_dls()
+        self.assertIn("1 lamella (shell 4.5 nm", app.dls_text.get("1.0", "end"))
+        app.dls_vars['shell_n'].set("1")
+        self.assertAlmostEqual(app._shell()[0], 4.5)
+        self.assertAlmostEqual(app._shell()[1], 0.12)
+
+    def test_fields_follow_the_conversion(self):
+        app = self.app
+        entries = {k: w for k, ws in app._conv_fields.items() for w in ws if isinstance(w, tk.Entry)}
+        app.dls_conv.set("Mie"); app._on_conv(draw=False)
+        states = {k: str(w.cget("state")) for k, w in entries.items()}
+        self.assertEqual(states["Mie"], "normal")
+        self.assertEqual(states["Mie shell"], "disabled")
+        app.dls_conv.set("Mie shell"); app._on_conv(draw=False)
+        self.assertEqual(str(entries["Mie shell"].cget("state")), "normal")
+        self.assertEqual(str(entries["Mie"].cget("state")), "disabled")
+        app.dls_conv.set("Rayleigh"); app._on_conv(draw=False)
+        self.assertEqual({str(w.cget("state")) for w in entries.values()}, {"disabled"})
+
+    def test_rayleigh_warning_for_large_particles(self):
+        app = self.app
+        app.notebook.select(app.tab_size)
+        sample = app.samples['s.nsz']
+        sample['sz'] = np.geomspace(1.0, 8000.0, 84)
+        big = np.exp(-0.5 * ((np.log(sample['sz']) - np.log(400.0)) / 0.2) ** 2)      # 400 nm
+        sample['intens'] = 100.0 * big / big.sum()
+        small = np.exp(-0.5 * ((np.log(sample['sz']) - np.log(20.0)) / 0.2) ** 2)     # 20 nm
+        app.dls_weight.set("Number")
+        app.dls_conv.set("Rayleigh")
+        app._plot_size()
+        self.assertIn("Rayleigh is more than 10% off above", app.ray_warn.cget("text"))
+        app.dls_conv.set("Mie")                                        # no warning with Mie, nor for intensity
+        app._plot_size()
+        self.assertEqual(app.ray_warn.cget("text"), "")
+        app.dls_conv.set("Rayleigh")
+        app.dls_weight.set("Intensity")
+        app._plot_size()
+        self.assertEqual(app.ray_warn.cget("text"), "")
+        sample['intens'] = 100.0 * small / small.sum()                 # small particles: Rayleigh is fine
+        app.dls_weight.set("Number")
+        app._plot_size()
+        self.assertEqual(app.ray_warn.cget("text"), "")
+        self.assertGreater(app._rayleigh_limit(nsz.dls_record(sample), 532.0, 1.6), 40.0)
 
     def test_the_source_selector_swaps_the_two_plots(self):
         app = self.app

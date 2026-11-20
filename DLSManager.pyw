@@ -473,10 +473,15 @@ DLS_TIPS = {
              "the file: from channel 7 up to a channel that depends on the measurement). Without it, every point "
              "above the g1 minimum is used. Files without that information use all points. The cumulants are not "
              "restricted.",
-    'shell': "Mie shell: a vesicle as a shell around a core filled with the medium. Thickness of the shell in nm (a "
-             "single bilayer is about 4.5 nm; each extra lamella adds about as much) and its refractive index above "
-             "the medium's (0.12 for a lipid bilayer, an order-of-magnitude value). With the outer diameter from the "
-             "distribution, the light one vesicle scatters grows about as d^4 at small sizes instead of d^6.",
+    'shell': "Mie shell: a vesicle as a shell around a core filled with the medium. Lamellae: number of bilayers (1 = "
+             "unilamellar). Bilayer: thickness of one bilayer, about 4.5 nm. Repeat distance: bilayer plus the water "
+             "between two lamellae, about 7 nm. The lamellae are treated as one shell of n x repeat - (repeat - bilayer) "
+             "whose index excess is the lipid's (0.12, an order-of-magnitude value) averaged over the water gaps. The "
+             "diameter is the outer one. The light one vesicle scatters grows about as d^4 at small sizes instead of "
+             "d^6. Only used by the 'Mie shell' conversion.",
+    'pn': "Refractive index of the particle for the 'Mie' conversion (a solid sphere). Empty: the value stored in the "
+          "file, set in the instrument software (1.6 by default). Not used by 'Mie shell' (which has its own "
+          "parameters) or 'Rayleigh'.",
     'source': "Instrument: the size distribution stored in the file by the instrument software (with its cumulative "
               "curve). Recomputed: a new analysis of the stored correlogram, with the model chosen below (cumulants, "
               "free distribution or one or two log-normal peaks), shown next to the instrument's values.",
@@ -1107,18 +1112,38 @@ class DLSManager:
         self.dls_conv = tk.StringVar(value=DLS_CONVERSIONS[0])
         cv = ttk.Combobox(conv, textvariable=self.dls_conv, values=DLS_CONVERSIONS, state="readonly", width=9)
         cv.pack(side=tk.LEFT, padx=(4, 0))
-        cv.bind("<<ComboboxSelected>>", lambda e: self._plot_dist())
+        cv.bind("<<ComboboxSelected>>", lambda e: self._on_conv())
         self._tips.extend(ToolTip(w, DLS_TIPS['conv']) for w in (lab0, cv))
-        for text, key, val, width, tip in (("Particle n", 'np', '', 6, 'conv'),
-                                           ("shell thickness (nm)", 'shell_t', '4.5', 5, 'shell'),
-                                           ("index excess", 'shell_dn', '0.12', 5, 'shell')):
-            lab = tk.Label(conv, text=text, bg=bg, font=fnt)
+        # which fields belong to which conversion: Particle n to Mie, the vesicle parameters to Mie shell
+        self._conv_fields = {"Mie": [], "Mie shell": []}
+        lab = tk.Label(conv, text="Particle n (Mie; empty = the file's)", bg=bg, font=fnt)
+        lab.pack(side=tk.LEFT, padx=(10, 2))
+        self.dls_vars['np'] = tk.StringVar(value='')              # empty = the index stored in the file (1.59 if absent)
+        ent = tk.Entry(conv, textvariable=self.dls_vars['np'], width=6)
+        ent.pack(side=tk.LEFT)
+        ent.bind("<Return>", lambda e: self._plot_dist())
+        self._tips.extend(ToolTip(w, DLS_TIPS['pn']) for w in (lab, ent))
+        self._conv_fields["Mie"] += [lab, ent]
+        shell = tk.Frame(self.tab_size, bg=bg)
+        shell.pack(fill=tk.X, padx=14)
+        lab0 = tk.Label(shell, text="Vesicle (Mie shell):", bg=bg, font=fnt)
+        lab0.pack(side=tk.LEFT)
+        self._conv_fields["Mie shell"].append(lab0)
+        for text, key, val, width in (("lamellae", 'shell_n', '1', 4), ("bilayer (nm)", 'shell_t', '4.5', 5),
+                                      ("repeat distance (nm)", 'shell_rep', '7.0', 5),
+                                      ("index excess of the lipid", 'shell_dn', '0.12', 5)):
+            lab = tk.Label(shell, text=text, bg=bg, font=fnt)
             lab.pack(side=tk.LEFT, padx=(10, 2))
-            self.dls_vars[key] = tk.StringVar(value=val)          # np empty = the index stored in the file (1.59 if absent)
-            ent = tk.Entry(conv, textvariable=self.dls_vars[key], width=width)
+            self.dls_vars[key] = tk.StringVar(value=val)
+            ent = tk.Entry(shell, textvariable=self.dls_vars[key], width=width)
             ent.pack(side=tk.LEFT)
             ent.bind("<Return>", lambda e: self._plot_dist())
-            self._tips.extend(ToolTip(w, DLS_TIPS[tip]) for w in (lab, ent))
+            self._tips.extend(ToolTip(w, DLS_TIPS['shell']) for w in (lab, ent))
+            self._conv_fields["Mie shell"] += [lab, ent]
+        self.ray_warn = tk.Label(self.tab_size, text="", bg=bg, fg="#B91C1C", font=("Helvetica", 9, "bold"),
+                                 anchor="w", justify=tk.LEFT, wraplength=1000)
+        self.ray_warn.pack(fill=tk.X, padx=14)
+        self._on_conv(draw=False)
 
         # controls and plot of each source; only one of the two is shown
         self.box_inst = tk.Frame(self.tab_size, bg=bg)
@@ -1177,6 +1202,19 @@ class DLSManager:
         self.canvas_dls.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
         self.cur_dls = PlotCursor(self.canvas_dls)
         self._on_source()
+
+    def _on_conv(self, draw=True):
+        """Enable the fields of the chosen conversion and grey out the others, then redraw."""
+        conv = self.dls_conv.get()
+        for name, widgets in self._conv_fields.items():
+            on = name == conv
+            for w in widgets:
+                if isinstance(w, tk.Entry):
+                    w.config(state=tk.NORMAL if on else tk.DISABLED)
+                else:
+                    w.config(fg="black" if on else "#94A3B8")
+        if draw:
+            self._plot_dist()
 
     def _on_source(self):
         """Show the controls and the plot of the chosen source and draw it."""
@@ -1444,6 +1482,7 @@ class DLSManager:
         weight = self.dls_weight.get()
         by_int = weight == DLS_WEIGHTS[0]
         show_c = self.show_cumul.get()
+        ray_items = []
         if show_c and self.selected:
             gs = self.fig_size.add_gridspec(1, 2, wspace=0.3)
             ax  = self.fig_size.add_subplot(gs[0])
@@ -1465,6 +1504,7 @@ class DLSManager:
             if mask.sum() < 2:
                 continue
 
+            ray_items.append((lbl, sz, d['intens'], dls_record(d), rec_wl(d), self._particle_index(d)))
             if by_int:
                 freq  = d['intens']
                 cumul = d['cumul']
@@ -1533,6 +1573,7 @@ class DLSManager:
                     ha='center', va='center', transform=ax.transAxes,
                     fontsize=12, color='#94A3B8')
 
+        self._rayleigh_warning(ray_items, weight, self.dls_conv.get())
         self._style_figure(self.fig_size)
         self.cur_size.attach()
         self.canvas_size.draw()
@@ -1563,6 +1604,7 @@ class DLSManager:
         ax1 = self.fig_dls.add_subplot(121)
         ax2 = self.fig_dls.add_subplot(122)
         lines = []
+        ray_items = []
         try:
             wl, alpha, gmin = (float(self.dls_vars[k].get()) for k in ('wl', 'alpha', 'gmin'))
             if wl <= 0 or alpha < 0 or not 0 < gmin < 1:
@@ -1609,6 +1651,7 @@ class DLSManager:
                 i1 = self._dls_i1(d, rec, r['d'], conv, wl) if weight != DLS_WEIGHTS[0] else None
                 pw = self._weighted(r, weight, i1)
                 ax2.plot(r['d'], pw / pw.max(), '-', lw=1.6, color=c, label=name)
+                ray_items.append((name, r['d'], r['p'], rec, wl, self._particle_index(d)))
                 if r['z'] is not None:
                     ax2.axvline(r['z'], color=c, ls=':', lw=1)
                 lines.extend(self._dls_summary(path, name, r, model, wl, alpha, gmin, weight, i1, conv))
@@ -1629,10 +1672,43 @@ class DLSManager:
         if not self.selected:
             ax1.text(0.5, 0.5, "No sample selected\n\nLoad .nsz files and select them in the list",
                      ha='center', va='center', transform=ax1.transAxes, fontsize=12, color='#94A3B8')
+        self._rayleigh_warning(ray_items, weight, conv)
         self._set_dls_text(lines)
         self._style_figure(self.fig_dls)
         self.cur_dls.attach()
         self.canvas_dls.draw()
+
+    def _rayleigh_limit(self, rec, wl, n_particle):
+        """Diameter (nm) above which the Rayleigh d^6 law is off by more than 10% for these conditions: the first size at
+        which Mie scattering of a solid sphere, divided by d^6, falls below 0.9 of its small-size value. 60 nm if the
+        file has no angle or index to work it out."""
+        if rec is None:
+            return 60.0
+        key = ('ray', rec['angle'], rec['n'], wl, n_particle)
+        if key not in self._dls_cache:
+            grid = np.geomspace(5.0, 400.0, 70)
+            ratio = mie_intensity(grid, wl, rec['n'], n_particle, rec['angle']) / grid ** 6
+            below = np.nonzero(ratio < 0.9 * ratio[0])[0]
+            self._dls_cache[key] = float(grid[below[0]]) if len(below) else 400.0
+        return self._dls_cache[key]
+
+    def _rayleigh_warning(self, items, weight, conv):
+        """Red note above the plot when Rayleigh is used for volume or number on a distribution with much of its
+        intensity above the size where d^6 stops being right. `items`: (name, diameters, intensity weights, record,
+        wavelength, particle index) of the plotted samples."""
+        text = ""
+        if conv == "Rayleigh" and weight != DLS_WEIGHTS[0]:
+            worst = None
+            for name, d, p, rec, wl, n_p in items:
+                lim = self._rayleigh_limit(rec, wl, n_p)
+                p = np.asarray(p, float)
+                frac = float(p[np.asarray(d, float) > lim].sum() / p.sum()) if p.sum() > 0 else 0.0
+                if frac > 0.05 and (worst is None or frac > worst[0]):
+                    worst = (frac, lim, name)
+            if worst:
+                text = ("Warning: Rayleigh is more than 10%% off above %.0f nm and %.0f%% of the intensity of %s is larger: "
+                        "volume and number are not reliable, use Mie." % (worst[1], 100 * worst[0], worst[2]))
+        self.ray_warn.config(text=text)
 
     def _tail_fraction(self):
         try:
@@ -1655,15 +1731,25 @@ class DLSManager:
             pass
         return d['params'].get('n_particle') or 1.59
 
-    def _shell(self):
-        """(thickness nm, index excess) typed for the vesicle shell; the defaults of LabSpectrumManager if invalid."""
+    def _shell_params(self):
+        """(lamellae, bilayer nm, repeat distance nm, index excess of the lipid) typed for the vesicle; the defaults of
+        LabSpectrumManager (one bilayer of 4.5 nm, repeat 7 nm, 0.12) for any value that is invalid."""
         try:
-            t, dn = float(self.dls_vars['shell_t'].get()), float(self.dls_vars['shell_dn'].get())
-            if t > 0 and 0 < dn < 1:
-                return t, dn
+            n, t = int(float(self.dls_vars['shell_n'].get())), float(self.dls_vars['shell_t'].get())
+            rep_, dn = float(self.dls_vars['shell_rep'].get()), float(self.dls_vars['shell_dn'].get())
+            if 1 <= n <= 60 and t > 0 and rep_ >= t and 0 < dn < 1:
+                return n, t, rep_, dn
         except ValueError:
             pass
-        return 4.5, 0.12
+        return 1, 4.5, 7.0, 0.12
+
+    def _shell(self):
+        """(thickness nm, index excess) of the one shell that stands for the vesicle: n lamellae are a shell of
+        n * repeat - (repeat - bilayer) whose index excess is that of the lipid averaged over the water gaps (the model of
+        LabSpectrumManager's vesicle_amplitude); one lamella is the bilayer itself."""
+        n, t, rep_, dn = self._shell_params()
+        total = n * rep_ - (rep_ - t)
+        return total, dn * n * t / total
 
     def _dls_i1(self, d, rec, grid, conv, wl):
         """Light one particle scatters at each diameter of `grid` (None for Rayleigh: dls_reweight then uses d^6)."""
@@ -1692,7 +1778,8 @@ class DLSManager:
         w = weight.lower()
         by_int = weight == DLS_WEIGHTS[0]
         how = {"Mie": f"Mie, particle n {self._particle_index(self.samples[path]):g}",
-               "Mie shell": f"Mie shell, t {self._shell()[0]:g} nm, index excess {self._shell()[1]:g}"}.get(conv, "Rayleigh (d^6)")
+               "Mie shell": "Mie shell, %d lamella%s (shell %.3g nm, index excess %.3g)" % (
+                   self._shell_params()[0], "e" if self._shell_params()[0] > 1 else "", *self._shell())}.get(conv, "Rayleigh (d^6)")
         if r['peaks'] is None:
             mean, mode, sd = dls_stats(r['d'], self._weighted(r, weight, i1))
             out.append(f"  Regularised distribution by {w} (α = {alpha:g}{'' if by_int else f', tail cut {100 * self._tail_fraction():g}%'}): mean {mean:.0f} nm, mode {mode:.0f} nm, "
