@@ -29,7 +29,7 @@ without it. The three `screenshot*.png` are the real program with the 0843 file 
 
 Single file `DLSManager.pyw`: parser functions (`f32`, `parse_props`, `load_nsz` / `_read_nsz`, `dump_nsz` for
 debugging) and the class `DLSManager` (sidebar with sample list, a `ttk.Notebook` with Autocorrelogram /
-Size distribution / Parameters tabs, matplotlib `Figure`s `fig_acf`, `fig_size` and `fig_dls`). `self.samples = {path: data dict}`, `self.selected`
+Size distribution / Parameters tabs, matplotlib `Figure`s `fig_acf` and `fig_size`). `self.samples = {path: data dict}`, `self.selected`
 = paths shown. `_plot_acf` / `_plot_size` redraw on every control change, `_update_params_table` fills the table (up to 5
 samples), `_write_xlsx` writes one workbook per sample, `_to_number_dist` converts intensity to number distribution
 (Rayleigh, N proportional to I/d^6).
@@ -59,21 +59,17 @@ header lengths above reproduce all three CSV columns exactly (to the CSV roundin
 ## Size distribution tab (instrument result and DLS analysis, ported from LabSpectrumManager)
 
 One tab, `tab_size` ("Size distribution"; merged on 2026-11-20 from the former 'Distribution' and 'DLS analysis' tabs, which showed two
-intensity distributions and two different number conversions). Built by `_build_size_tab`: the shared row has `size_source`
-(`SIZE_SOURCES` = Instrument / Recomputed), `size_xscale`, `dls_weight` (intensity / volume / number) and the conversion
-(`dls_conv`, particle n, shell thickness and index); `box_inst` holds the cumulative checkbox and `fig_size` (the file's own
-84-bin distribution, `_plot_size`), `box_rec` the model controls, `fig_dls` and the text (`_plot_dls`). `_on_source` swaps the boxes,
-`_plot_dist` redraws the visible one (`_refresh_dls` plots the recomputed one only while the tab is shown), `_current_figure`
-returns `fig_size` or `fig_dls` by source. In the Instrument source volume/number use the same conversion as the Recomputed one (`dls_reweight`
-with the per-particle intensity on the file's diameters; Rayleigh if the file lacks angle/index); `_to_number_dist` remains for the Excel export.
-Cursor bar: `PlotCursor` (one per figure: `cur_acf`, `cur_size`, `cur_dls`): left click/drag puts a red vertical line in the clicked
-panel, with a box listing each labelled curve's interpolated value (curves with a label starting with `_` are named by the attribute
-`_cursor_name`, set on the unlabelled fit lines); ignored while a toolbar tool is active (`toolbar.mode`); right click removes it. The
-plot methods rebuild the figure with `fig.clear()`, so each calls `cur.attach()` before `canvas.draw()`; the decorator `_no_cursor` takes
-the bar out of the figure around Save Figure Image / Save Figure (pickle) / Edit Figure (they copy the figure). Vertical lines in the plots:
-D50 (dotted, instrument distribution), D10/D50/D90 (dashed, cumulative), Z-average (dotted, recomputed distribution), each with a
-proxy entry in the legend. Tests: `TestApplication.test_cursor_*` send matplotlib mouse events.
-
+intensity distributions and two different number conversions; unified again the same day so that both sources draw the same layout). Built
+by `_build_size_tab`: the shared rows have `size_source` (`SIZE_SOURCES` = Instrument / Recomputed), `size_xscale`, `dls_weight`
+(intensity / volume / number), `show_cumul` (optional, off by default) and the conversion (`dls_conv`, particle n, vesicle lamellae/bilayer/
+repeat/index); `box_rec` (the model controls) is packed above `plot_area` only for Recomputed. ONE figure, `fig_size`, drawn by `_plot_dist`
+(`_plot_size` and `_plot_dls` are thin wrappers): left the correlogram as g1 = sqrt(g2-1) with the fit (Instrument: the file's fit,
+`sqrt` of the g2-1 stored; Recomputed: ours; points outside the instrument range hollow), middle the distribution normalised to its maximum,
+right the optional cumulative curve; the text under it is `_inst_summary` (instrument values) or `_dls_summary` (recomputed with the comparison).
+The recomputed analysis takes a moment, so `_plot_dist` returns early for that source unless the tab is shown (`<<NotebookTabChanged>>` calls
+`_refresh_dls`). In the Instrument source volume/number use the same conversion as the Recomputed one (`dls_reweight` with the per-particle
+intensity on the file's diameters; Rayleigh if the file lacks angle/index); `_to_number_dist` remains for the Excel export. The Autocorrelogram tab
+has a g1 / g2-1 switch (`acf_quantity`, default g1: the earlier g2-1 plot looked different from the Recomputed correlogram, which is g1).
 The Recomputed part, in detail:
 
 Module-level functions after the parser: `dls_q2`, `_dls_gamma`, `dls_cumulants` (quadratic fit of ln g1, g1 > 0.3), `dls_invert`
@@ -84,7 +80,7 @@ temperature; None if the delays are not aligned). Wavelength is an entry (532, a
 draws g1 with the fit and the intensity distribution for all selected samples and `_dls_summary` writes the comparison with the
 instrument (Z-average, PI, mean, mode, S.D.). It runs only while the tab is shown (`_refresh_dls`, `<<NotebookTabChanged>>`) and caches
 results in `_dls_cache`; changing the model resets g1 min (0.1 regularised, 0.05 peaks). `ToolTip` gives the help texts (`DLS_TIPS`).
-The figure is saved/edited like the others (`fig_dls`, preset `double`). Tests: `tests/test_dls.py` (synthetic correlograms of
+The figure is saved/edited like the others (`fig_size`, preset `double`). Tests: `tests/test_dls.py` (synthetic correlograms of
 known sizes, the real sample, the tab).
 
 Instrument range: the files store the correlator channels the instrument used for the size distribution as int32 `Dist_ChannelFrom` (7 in

@@ -346,21 +346,42 @@ class TestDlsTab(unittest.TestCase):
         self.app.listbox.selection_set(0)
         self.app._on_select()
 
-    def test_runs_only_on_its_tab_and_compares_with_the_instrument(self):
-        self.assertEqual(len(self.app.fig_dls.axes), 0)               # not computed while another tab is shown
-        self.app.size_source.set("Recomputed"); self.app.notebook.select(self.app.tab_size)
+    def test_recomputed_runs_only_while_the_tab_is_shown_and_compares_with_the_instrument(self):
+        app = self.app
+        app.size_source.set("Recomputed")
+        app._plot_dist()                                               # another tab is shown: nothing is computed
+        self.assertEqual(len(app._dls_cache), 0)
+        app.notebook.select(app.tab_size)
         self.root.update()
-        self.assertEqual(len(self.app.fig_dls.axes), 2)
-        self.assertIs(self.app._current_figure(), self.app.fig_dls)
-        text = self.app.dls_text.get("1.0", "end")
+        self.assertGreater(len(app._dls_cache), 0)
+        self.assertEqual(len(app.fig_size.axes), 2)
+        self.assertIs(app._current_figure(), app.fig_size)
+        text = app.dls_text.get("1.0", "end")
         self.assertIn("instrument", text)
         self.assertIn("Z-average", text)
+
+    def test_both_sources_draw_the_same_layout(self):
+        app = self.app
+        app.notebook.select(app.tab_size)
+        for source in ("Instrument", "Recomputed"):
+            app.size_source.set(source)
+            app._on_source()
+            for show in (False, True):
+                app.show_cumul.set(show)
+                app._plot_dist()
+                titles = [ax.get_title() for ax in app.fig_size.axes]
+                self.assertEqual(titles[:2], ["Correlogram and fit", "Size distribution by intensity"], source)
+                self.assertEqual(len(titles), 3 if show else 2)
+                self.assertTrue(app.fig_size.axes[0].lines, source)     # the measured points and the fit are drawn
+        app.size_source.set("Instrument")
+        app._on_source()
+        self.assertIn("Instrument: Z-average", app.dls_text.get("1.0", "end"))
 
     def test_weighting_changes_the_plot_and_the_text(self):
         self.app.size_source.set("Recomputed"); self.app.notebook.select(self.app.tab_size)
         self.app.dls_weight.set("Number")
         self.app._plot_dls()
-        self.assertEqual(self.app.fig_dls.axes[1].get_title(), "Size distribution by number")
+        self.assertEqual(self.app.fig_size.axes[1].get_title(), "Size distribution by number")
         self.assertIn("Mie", self.app.dls_text.get("1.0", "end"))             # Mie is the default conversion
         self.app.dls_weight.set("Intensity")
         self.app._plot_dls()
@@ -450,15 +471,16 @@ class TestDlsTab(unittest.TestCase):
     def test_the_source_selector_swaps_the_two_plots(self):
         app = self.app
         app.notebook.select(app.tab_size)
-        self.assertEqual(app.box_inst.winfo_manager(), "pack")
-        self.assertEqual(app.box_rec.winfo_manager(), "")
+        self.assertEqual(app.box_rec.winfo_manager(), "")              # the model controls belong to Recomputed
         self.assertIs(app._current_figure(), app.fig_size)
         app.size_source.set("Recomputed")
         app._on_source()
         self.root.update()
         self.assertEqual(app.box_rec.winfo_manager(), "pack")
-        self.assertEqual(app.box_inst.winfo_manager(), "")
-        self.assertIs(app._current_figure(), app.fig_dls)
+        self.assertIs(app._current_figure(), app.fig_size)             # the same figure for both sources
+        app.size_source.set("Instrument")
+        app._on_source()
+        self.assertEqual(app.box_rec.winfo_manager(), "")
         self.assertEqual(len(app.notebook.tabs()), 3)                  # Autocorrelogram, Size distribution, Parameters
 
     def test_instrument_distribution_by_volume_and_number(self):
@@ -468,10 +490,11 @@ class TestDlsTab(unittest.TestCase):
             for conv in ("Mie", "Mie shell", "Rayleigh"):
                 app.dls_weight.set(weight)
                 app.dls_conv.set(conv)
-                app._plot_size()
-                ax = app.fig_size.axes[0]
-                self.assertEqual(ax.get_ylabel(), weight + " (%)")
-                self.assertAlmostEqual(float(np.sum(ax.lines[0].get_ydata())), 100.0, delta=0.5)
+                app._plot_dist()
+                ax = app.fig_size.axes[1]
+                self.assertEqual(ax.get_ylabel(), weight + "-weighted (normalised)")
+                dist = [ln for ln in ax.lines if len(ln.get_xdata()) > 10][0]
+                self.assertAlmostEqual(float(np.max(dist.get_ydata())), 1.0)
 
     def test_models_and_invalid_settings(self):
         self.app.size_source.set("Recomputed"); self.app.notebook.select(self.app.tab_size)

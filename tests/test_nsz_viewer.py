@@ -93,7 +93,8 @@ def synthetic_sample(name="synthetic"):
         'fit': acf[6:] * 0.99, 'resid': acf[6:] * 0.01, 'fit_offset': 6,
         'sz': sz, 'intens': intens, 'cumul': np.cumsum(intens),
         'params': {'Sample_Name': name, 'Date': '2026-01-02', 'Time': '10:11:12', 'D50_nm': 316.0,
-                   'D10_nm': 250.0, 'D90_nm': 400.0, 'Peak1_nm': 316.0, 'PDI': 0.1, 'Peak2_nm': None},
+                   'D10_nm': 250.0, 'D90_nm': 400.0, 'Peak1_nm': 316.0, 'PDI': 0.1, 'Peak2_nm': None,
+                   'ZAvg_nm': 300.0},
     }
 
 
@@ -278,7 +279,7 @@ class TestApplication(unittest.TestCase):
         self.add_synthetic("a", "b")
         self.assertEqual(len(self.app.selected), 2)
         self.assertEqual(len(self.app.fig_acf.axes[0].lines), 2 * 2 + 1)      # 2 samples: data + fit, plus the zero line
-        self.assertEqual(len(self.app.fig_size.axes), 2)                       # distribution + cumulative
+        self.assertEqual(len(self.app.fig_size.axes), 2)                       # correlogram + distribution (cumulative is optional)
 
     def test_residuals_and_number_representation(self):
         self.add_synthetic("a")
@@ -287,9 +288,12 @@ class TestApplication(unittest.TestCase):
         self.assertEqual(len(self.app.fig_acf.axes), 2)
         self.app.dls_weight.set("Number")
         self.app.show_cumul.set(False)
-        self.app._plot_size()
-        self.assertEqual(len(self.app.fig_size.axes), 1)
-        self.assertEqual(self.app.fig_size.axes[0].get_ylabel(), "Number (%)")
+        self.app._plot_dist()
+        self.assertEqual(len(self.app.fig_size.axes), 2)
+        self.assertEqual(self.app.fig_size.axes[1].get_ylabel(), "Number-weighted (normalised)")
+        self.app.show_cumul.set(True)                                          # the cumulative curve is optional
+        self.app._plot_dist()
+        self.assertEqual(len(self.app.fig_size.axes), 3)
 
     def test_parameters_table(self):
         self.add_synthetic("a", "b")
@@ -422,9 +426,11 @@ class TestApplication(unittest.TestCase):
         self.app._on_select()
         self.app.notebook.select(self.app.tab_size)
         self.root.update()
-        labels = [t.get_text() for t in self.app.fig_size.axes[0].get_legend().get_texts()]
-        self.assertIn("D50 (median)", labels)
+        self.app.show_cumul.set(True)
+        self.app._plot_dist()
         labels = [t.get_text() for t in self.app.fig_size.axes[1].get_legend().get_texts()]
+        self.assertIn("Z-average (instrument)", labels)
+        labels = [t.get_text() for t in self.app.fig_size.axes[2].get_legend().get_texts()]
         self.assertIn("D10, D50, D90", labels)
 
     def test_loading_a_bad_file_reports_the_error(self):

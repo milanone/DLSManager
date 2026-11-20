@@ -20,15 +20,17 @@ exports everything to Excel.
 - Opens `.nsz` files from a dialog, a whole folder, the command line or drag-and-drop
   (needs `tkinterdnd2`).
 - Loads many samples and overlays the selected ones.
-- **Autocorrelogram** tab: measured correlation function, Horiba fit and residuals. The file stores the intensity
-  correlation g₂−1 (the square of the g₁ that the instrument software exports), and that is what is plotted.
-- **Size distribution** tab, with two sources:
-  - *Instrument*: the distribution that the instrument software stored in the file, with its cumulative curve.
+- **Autocorrelogram** tab: measured correlation function, Horiba fit and residuals, as g₁ (what the instrument software
+  shows and what the Size distribution tab plots) or as the g₂−1 that the file stores (g₁ squared).
+- **Size distribution** tab, drawn the same way for both sources: the correlogram (g₁) with its fit, the size distribution
+  and, optionally, the cumulative curve.
+  - *Instrument*: the fit and the distribution that the instrument software stored in the file.
   - *Recomputed*: the stored correlogram is analysed again in the program, and the result is shown next to the
     instrument's values. Cumulants (Z-average and PI) from a quadratic fit of ln g₁; an intensity-weighted size
     distribution either free (regularised non-negative least squares) or as one or two log-normal peaks with a free
     intercept of g₁ and a BIC that says whether the second peak is supported. Needs `scipy`. See "Validation" for how far
-    to trust it.
+    to trust it: the intensity distribution and the Z-average are checked against the instrument, volume, number and the
+    two-peak fit are not (red cautions say so on the plot).
 
   Both sources can be shown by intensity, volume or number, on a log or linear axis. Volume and number are converted
   from the intensity distribution with Mie theory (the light one particle scatters at the measurement angle; solid sphere

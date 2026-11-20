@@ -1058,6 +1058,15 @@ class DLSManager:
                            bg="white", font=("Helvetica",9),
                            command=self._plot_acf).pack(side=tk.LEFT, padx=4)
 
+        ttk.Separator(ctrl, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=8, pady=2)
+        tk.Label(ctrl, text="Quantity:", bg="white", font=("Helvetica",9)).pack(side=tk.LEFT)
+        # g1 is what the instrument software shows and what the Size distribution tab plots; the file stores g2 - 1 = g1^2
+        self.acf_quantity = tk.StringVar(value="g1")
+        for val, lbl in [("g1", "g1"), ("g2", "g2 - 1")]:
+            tk.Radiobutton(ctrl, text=lbl, variable=self.acf_quantity, value=val,
+                           bg="white", font=("Helvetica",9),
+                           command=self._plot_acf).pack(side=tk.LEFT, padx=4)
+
         self.show_fit = tk.BooleanVar(value=True)
         tk.Checkbutton(ctrl, text="Show ideal fit", variable=self.show_fit,
                        bg="white", font=("Helvetica",9),
@@ -1075,10 +1084,11 @@ class DLSManager:
         self.cur_acf = PlotCursor(self.canvas_acf)
 
     def _build_size_tab(self):
-        """One tab for the size distribution. Source 'Instrument': the distribution stored in the file (and its
-        cumulative curve). Source 'Recomputed': a new analysis of the stored correlogram (cumulants, free or
-        log-normal distributions). Weighting (intensity, volume, number), the conversion used for volume and number and
-        the x scale apply to both."""
+        """One tab for the size distribution, drawn the same way for both sources: the correlogram with its fit (g1) on the
+        left, the size distribution by intensity, volume or number in the middle and, optionally, the cumulative curve on
+        the right. Source 'Instrument': the fit and the distribution that the instrument software stored in the file.
+        Source 'Recomputed': a new analysis of the stored correlogram (cumulants, free or log-normal distributions).
+        Weighting, the conversion used for volume and number and the x scale apply to both."""
         self._tips = []
         self.dls_vars = {}
         bg, fnt = "white", ("Helvetica", 9)
@@ -1104,6 +1114,10 @@ class DLSManager:
             rb = tk.Radiobutton(top, text=w, variable=self.dls_weight, value=w, bg=bg, font=fnt, command=self._plot_dist)
             rb.pack(side=tk.LEFT, padx=2)
             self._tips.append(ToolTip(rb, DLS_TIPS['weight']))
+        ttk.Separator(top, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=8, pady=2)
+        self.show_cumul = tk.BooleanVar(value=False)
+        tk.Checkbutton(top, text="Show cumulative", variable=self.show_cumul, bg=bg, font=fnt,
+                       command=self._plot_dist).pack(side=tk.LEFT)
 
         conv = tk.Frame(self.tab_size, bg=bg)
         conv.pack(fill=tk.X, padx=14)
@@ -1145,22 +1159,10 @@ class DLSManager:
         self.ray_warn.pack(fill=tk.X, padx=14)
         self._on_conv(draw=False)
 
-        # controls and plot of each source; only one of the two is shown
-        self.box_inst = tk.Frame(self.tab_size, bg=bg)
-        ctrl = tk.Frame(self.box_inst, bg=bg)
-        ctrl.pack(fill=tk.X, padx=14)
-        self.show_cumul = tk.BooleanVar(value=True)
-        tk.Checkbutton(ctrl, text="Show cumulative", variable=self.show_cumul, bg=bg, font=fnt,
-                       command=self._plot_size).pack(side=tk.LEFT, padx=4)
-        self.fig_size = Figure(figsize=(9, 5.5), dpi=100, facecolor="white")
-        self.canvas_size = FigureCanvasTkAgg(self.fig_size, self.box_inst)
-        NavigationToolbar2Tk(self.canvas_size, self.box_inst).pack(side=tk.BOTTOM, fill=tk.X)
-        self.canvas_size.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
-        self.cur_size = PlotCursor(self.canvas_size)
-
+        # controls of the recomputed analysis (shown only for that source), above the one plot area
         self.box_rec = tk.Frame(self.tab_size, bg=bg)
         ctrl = tk.Frame(self.box_rec, bg=bg)
-        ctrl.pack(fill=tk.X, padx=14)
+        ctrl.pack(fill=tk.X)
         tk.Label(ctrl, text="Model:", bg=bg, font=fnt).pack(side=tk.LEFT)
         self.dls_model = tk.StringVar(value=DLS_MODELS[0])
         cmb = ttk.Combobox(ctrl, textvariable=self.dls_model, values=DLS_MODELS, state="readonly", width=30)
@@ -1173,15 +1175,15 @@ class DLSManager:
             self.dls_vars[key] = tk.StringVar(value=val)
             ent = tk.Entry(ctrl, textvariable=self.dls_vars[key], width=6)
             ent.pack(side=tk.LEFT)
-            ent.bind("<Return>", lambda e: self._plot_dls())
+            ent.bind("<Return>", lambda e: self._plot_dist())
             self._tips.extend(ToolTip(w, DLS_TIPS[key]) for w in (lab, ent))
         # the usual g1 cut-off depends on the model (0.1 regularised, 0.05 peaks)
         self.dls_model.trace_add("write", self._on_dls_model)
         ctrl2 = tk.Frame(self.box_rec, bg=bg)
-        ctrl2.pack(fill=tk.X, padx=14)
+        ctrl2.pack(fill=tk.X)
         self.dls_range = tk.BooleanVar(value=True)
         rb = tk.Checkbutton(ctrl2, text="Instrument range", variable=self.dls_range, bg=bg, font=fnt,
-                            command=self._plot_dls)
+                            command=self._plot_dist)
         rb.pack(side=tk.LEFT)
         self._tips.append(ToolTip(rb, DLS_TIPS['range']))
         lab = tk.Label(ctrl2, text="Tail cut (% of max)", bg=bg, font=fnt)
@@ -1189,18 +1191,22 @@ class DLSManager:
         self.dls_vars['tail'] = tk.StringVar(value='5')
         ent = tk.Entry(ctrl2, textvariable=self.dls_vars['tail'], width=4)
         ent.pack(side=tk.LEFT)
-        ent.bind("<Return>", lambda e: self._plot_dls())
+        ent.bind("<Return>", lambda e: self._plot_dist())
         self._tips.extend(ToolTip(w, DLS_TIPS['tail']) for w in (lab, ent))
-        btn = tk.Button(ctrl2, text="Compute", command=self._plot_dls, bg="#FEF9C3", font=fnt)
+        btn = tk.Button(ctrl2, text="Compute", command=self._plot_dist, bg="#FEF9C3", font=fnt)
         btn.pack(side=tk.LEFT, padx=12)
-        self.dls_text = tk.Text(self.box_rec, height=9, font=("Consolas", 9), bg="#F8FAFC", relief=tk.FLAT,
+
+        # the plot area: text with the values at the bottom, then the toolbar, then the figure
+        self.plot_area = tk.Frame(self.tab_size, bg=bg)
+        self.plot_area.pack(fill=tk.BOTH, expand=True)
+        self.dls_text = tk.Text(self.plot_area, height=9, font=("Consolas", 9), bg="#F8FAFC", relief=tk.FLAT,
                                 wrap=tk.WORD, state=tk.DISABLED)
         self.dls_text.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=(0, 6))
-        self.fig_dls = Figure(figsize=(9, 4.5), dpi=100, facecolor="white")
-        self.canvas_dls = FigureCanvasTkAgg(self.fig_dls, self.box_rec)
-        NavigationToolbar2Tk(self.canvas_dls, self.box_rec).pack(side=tk.BOTTOM, fill=tk.X)
-        self.canvas_dls.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
-        self.cur_dls = PlotCursor(self.canvas_dls)
+        self.fig_size = Figure(figsize=(10, 4.5), dpi=100, facecolor="white")
+        self.canvas_size = FigureCanvasTkAgg(self.fig_size, self.plot_area)
+        NavigationToolbar2Tk(self.canvas_size, self.plot_area).pack(side=tk.BOTTOM, fill=tk.X)
+        self.canvas_size.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
+        self.cur_size = PlotCursor(self.canvas_size)
         self._on_source()
 
     def _on_conv(self, draw=True):
@@ -1217,19 +1223,11 @@ class DLSManager:
             self._plot_dist()
 
     def _on_source(self):
-        """Show the controls and the plot of the chosen source and draw it."""
-        inst = self.size_source.get() == SIZE_SOURCES[0]
+        """Show the controls of the chosen source and draw it."""
         self.box_rec.pack_forget()
-        self.box_inst.pack_forget()
-        (self.box_inst if inst else self.box_rec).pack(fill=tk.BOTH, expand=True)
+        if self.size_source.get() == SIZE_SOURCES[1]:
+            self.box_rec.pack(fill=tk.X, padx=14, before=self.plot_area)
         self._plot_dist()
-
-    def _plot_dist(self):
-        """Redraw the plot of the current source (the recomputed one only while the tab is visible: it takes a moment)."""
-        if self.size_source.get() == SIZE_SOURCES[0]:
-            self._plot_size()
-        else:
-            self._refresh_dls()
 
     def _build_params_tab(self):
         frame = tk.Frame(self.tab_params, bg="white")
@@ -1351,14 +1349,12 @@ class DLSManager:
 
     def _refresh_all(self):
         self._plot_acf()
-        self._plot_size()
+        self._plot_dist()
         self._update_params_table()
-        self._refresh_dls()
 
     def _refresh_dls(self):
-        """Redraw the DLS tab, but only while it is the visible one."""
-        if self.notebook.select() == str(self.tab_size) and self.size_source.get() == SIZE_SOURCES[1]:
-            self._plot_dls()
+        """Redraw the size distribution tab (the recomputed source only while the tab is shown: see _plot_dist)."""
+        self._plot_dist()
 
     # ── Plot style (PlotStyleKit) ─────────────────────────────────────────────
 
@@ -1397,6 +1393,7 @@ class DLSManager:
             axr = None
 
         xscale = self.acf_xscale.get()
+        g1_view = self.acf_quantity.get() == "g1"
         palette = sample_colors()
 
         for idx, path in enumerate(self.selected[:MAX_SAMPLES_SHOWN]):
@@ -1412,14 +1409,15 @@ class DLSManager:
             if mask.sum() < 2:
                 continue
 
-            ax.plot(tau[mask], acf[mask], 'o', color=c, markersize=3.5,
+            conv_q = (lambda v: np.sqrt(np.clip(v, 0, None))) if g1_view else (lambda v: v)
+            ax.plot(tau[mask], conv_q(acf[mask]), 'o', color=c, markersize=3.5,
                     linewidth=0, label=lbl)
 
             # Ideal fit — aligned to tau[fit_offset:]
             off = d.get('fit_offset', 6)
             if self.show_fit.get() and len(d['fit']) > 2:
                 tau_fit = tau[off:off + len(d['fit'])]
-                fit_vals = d['fit'][:len(tau_fit)]
+                fit_vals = conv_q(d['fit'][:len(tau_fit)])
                 ax.plot(tau_fit, fit_vals, '-', color=c, linewidth=1.5,
                         alpha=0.85)[0]._cursor_name = lbl + " fit"
 
@@ -1433,7 +1431,7 @@ class DLSManager:
         ax.set_xscale(xscale)
         ax.set_xlabel("Delay time τ (µs)", fontsize=10)
         # mathtext because Arial has no subscript glyphs; the stream holds g1 squared (see CLAUDE.md)
-        ax.set_ylabel(r"$g_2(\tau) - 1$ normalized", fontsize=10)
+        ax.set_ylabel(r"$g_1(\tau)$ = √(g$_2$ − 1), normalized" if g1_view else r"$g_2(\tau) - 1$ normalized", fontsize=10)
         ax.set_ylim(-0.05, 1.1)
         ax.set_title("Autocorrelation function (ACF)", fontsize=11, fontweight='bold')
         ax.axhline(0, color='gray', linewidth=0.7, linestyle='--')
@@ -1443,7 +1441,7 @@ class DLSManager:
         if axr is not None:
             axr.set_xscale(xscale)
             axr.set_xlabel("Delay time τ (µs)", fontsize=10)
-            axr.set_ylabel("Residuals", fontsize=9)
+            axr.set_ylabel("Residuals (g$_2$ − 1)", fontsize=9)
             axr.axhline(0, color='gray', linewidth=0.8)
             plt.setp(ax.get_xticklabels(), visible=False)
             ax.set_xlabel("")
@@ -1472,117 +1470,15 @@ class DLSManager:
             cumul = cumul / cumul[-1] * 100.0
         return num, cumul
 
-    def _refresh_size(self):
-        self._plot_size()
-        self._update_params_table()
-
     def _plot_size(self):
-        self.fig_size.clear()
-
-        weight = self.dls_weight.get()
-        by_int = weight == DLS_WEIGHTS[0]
-        show_c = self.show_cumul.get()
-        ray_items = []
-        if show_c and self.selected:
-            gs = self.fig_size.add_gridspec(1, 2, wspace=0.3)
-            ax  = self.fig_size.add_subplot(gs[0])
-            axc = self.fig_size.add_subplot(gs[1])
-        else:
-            ax  = self.fig_size.add_subplot(111)
-            axc = None
-
-        xscale = self.size_xscale.get()
-        palette = sample_colors()
-
-        for idx, path in enumerate(self.selected[:MAX_SAMPLES_SHOWN]):
-            d = self.samples[path]
-            c = palette[idx % len(palette)]
-            lbl = self._short_label(d['name'])
-
-            sz    = d['sz']
-            mask  = sz > 0
-            if mask.sum() < 2:
-                continue
-
-            ray_items.append((lbl, sz, d['intens'], dls_record(d), rec_wl(d), self._particle_index(d)))
-            if by_int:
-                freq  = d['intens']
-                cumul = d['cumul']
-            else:
-                # volume or number: the stored intensity distribution divided by the light one particle scatters
-                rec = dls_record(d)
-                conv = self.dls_conv.get() if rec is not None else "Rayleigh"
-                i1 = np.ones(len(sz))
-                live = (sz > 0) & (d['intens'] > 0)
-                if conv != "Rayleigh" and live.any():
-                    i1[live] = self._dls_i1(d, rec, sz[live], conv, rec_wl(d))
-                else:
-                    i1 = sz ** 6
-                freq = 100.0 * dls_reweight(np.where(sz > 0, sz, 1.0), np.where(live, d['intens'], 0.0), weight, i1)
-                cumul = np.cumsum(freq)
-                cumul = cumul / cumul[-1] * 100.0 if cumul[-1] > 0 else cumul
-
-            ax.plot(sz[mask], freq[mask], 'o-', color=c, markersize=3,
-                    linewidth=1.5, label=lbl)
-            ax.fill_between(sz[mask], freq[mask], alpha=0.08, color=c)
-
-            p = d['params']
-            if by_int and p.get('D50_nm'):
-                ax.axvline(p['D50_nm'], color=c, linewidth=0.8,
-                           linestyle=':', alpha=0.7)
-
-            if axc is not None:
-                axc.plot(sz[mask], cumul[mask], 'o-', color=c, markersize=3,
-                         linewidth=1.5, label=lbl)
-                if by_int:
-                    for pct in [10, 50, 90]:
-                        val = p.get(f'D{pct}_nm')
-                        if val:
-                            axc.axvline(val, color=c, linewidth=0.7,
-                                        linestyle='--', alpha=0.6)
-
-        repr_lbl = weight.lower()
-        ax.margins(y=0.18)                  # headroom so the legend does not cover the top of the peak
-        top = ax.get_ylim()[1]
-        ax.set_ylim(-0.02 * top, top)       # distributions are >= 0: no empty space below the baseline
-        ax.set_xscale(xscale)
-        ax.set_xlabel("Diameter (nm)", fontsize=10)
-        ax.set_ylabel(f"{weight} (%)", fontsize=10)
-        ax.set_title(f"Size distribution by {repr_lbl}", fontsize=11, fontweight='bold')
-        if self.selected:
-            if by_int:
-                ax.plot([], [], ':', color='gray', lw=0.9, label='D50 (median)')
-            ax.legend(fontsize=8, loc='upper right', framealpha=0.9)
-
-        if axc is not None:
-            axc.set_xscale(xscale)
-            axc.set_xlabel("Diameter (nm)", fontsize=10)
-            axc.set_ylabel("Cumulative (%)", fontsize=10)
-            axc.set_title(f"Cumulative distribution by {repr_lbl}", fontsize=11, fontweight='bold')
-            axc.set_ylim(-2, 104)
-            axc.axhline(10, color='gray', linewidth=0.5, linestyle=':')
-            axc.axhline(50, color='gray', linewidth=0.5, linestyle=':')
-            axc.axhline(90, color='gray', linewidth=0.5, linestyle=':')
-            if self.selected:
-                if by_int:
-                    axc.plot([], [], '--', color='gray', lw=0.8, label='D10, D50, D90')
-                axc.legend(fontsize=8, loc='upper left', framealpha=0.9)
-
-        if not self.selected:
-            ax.text(0.5, 0.5, "No sample selected\n\nLoad .nsz files and select them in the list",
-                    ha='center', va='center', transform=ax.transAxes,
-                    fontsize=12, color='#94A3B8')
-
-        self._show_warnings([self._volnum_warning(weight), self._rayleigh_warning(ray_items, weight, self.dls_conv.get())])
-        self._style_figure(self.fig_size)
-        self.cur_size.attach()
-        self.canvas_size.draw()
+        """Kept for the callers of the former instrument-only plot: the one size distribution plot."""
+        self._plot_dist()
 
     # ── DLS analysis ──────────────────────────────────────────────────────────
 
     def _on_dls_model(self, *_):
         self.dls_vars['gmin'].set('0.1' if self.dls_model.get() == DLS_MODELS[0] else '0.05')
-        self._plot_dls()
+        self._plot_dist()
 
     def _dls_result(self, path, model, wl, alpha, gmin):
         use_range = self.dls_range.get()
@@ -1598,87 +1494,176 @@ class DLSManager:
         self.dls_text.config(state=tk.DISABLED)
 
     def _plot_dls(self):
-        """Cumulants and intensity-weighted size distribution of the selected samples from their correlograms, with
-        the instrument's own values next to them."""
-        self.fig_dls.clear()
-        ax1 = self.fig_dls.add_subplot(121)
-        ax2 = self.fig_dls.add_subplot(122)
-        lines = []
-        ray_items = []
-        peak_warn = []
-        try:
-            wl, alpha, gmin = (float(self.dls_vars[k].get()) for k in ('wl', 'alpha', 'gmin'))
-            if wl <= 0 or alpha < 0 or not 0 < gmin < 1:
-                raise ValueError
-        except ValueError:
-            wl = None
-            lines.append("Invalid settings: wavelength > 0, smoothing >= 0 and 0 < g1 min < 1 are required.")
-        try:
-            import scipy.optimize  # noqa: F401  (nnls and least_squares)
-        except ImportError:
-            wl = None
-            lines.append("The inversion needs scipy (pip install scipy).")
+        """Kept for the callers of the former recomputed-only plot: the one size distribution plot."""
+        self._plot_dist()
+
+    def _inst_summary(self, name, d):
+        """Text lines for one sample: the values that the instrument software stored in the file."""
+        p = d['params']
+
+        def f(key, fmt):
+            return fmt.format(p[key]) if p.get(key) is not None else "n/a"
+
+        return [name,
+                "  Instrument: Z-average %s nm, PI %s | mean %s nm, mode %s nm, S.D. %s nm | D10/D50/D90 %s / %s / %s nm"
+                % (f('ZAvg_nm', '{:.1f}'), f('PDI', '{:.3f}'), f('Mean1_nm', '{:.0f}'), f('Mode_nm', '{:.0f}'),
+                   f('SD1_nm', '{:.0f}'), f('D10_nm', '{:.0f}'), f('D50_nm', '{:.0f}'), f('D90_nm', '{:.0f}'))]
+
+    def _plot_dist(self):
+        """The size distribution tab, the same layout for both sources: correlogram (g1) with the fit, size distribution,
+        and optionally the cumulative curve. Instrument: fit and distribution stored in the file. Recomputed: a new
+        analysis of the stored correlogram. The recomputed analysis takes a moment, so it is drawn only while the tab is
+        shown (<<NotebookTabChanged>> calls this when the tab is opened)."""
+        inst = self.size_source.get() == SIZE_SOURCES[0]
+        if not inst and self.notebook.select() != str(self.tab_size):
+            return
+        fig = self.fig_size
+        fig.clear()
+        weight, conv = self.dls_weight.get(), self.dls_conv.get()
+        show_c = self.show_cumul.get()
+        gs = fig.add_gridspec(1, 3 if show_c else 2, wspace=0.35)
+        ax1, ax2 = fig.add_subplot(gs[0]), fig.add_subplot(gs[1])
+        axc = fig.add_subplot(gs[2]) if show_c else None
+        lines, ray_items, peak_warn = [], [], []
+        wl = alpha = gmin = None
         model = self.dls_model.get()
-        weight = self.dls_weight.get()
-        conv = self.dls_conv.get()
+        ok = True
+        if not inst:
+            try:
+                wl, alpha, gmin = (float(self.dls_vars[k].get()) for k in ('wl', 'alpha', 'gmin'))
+                if wl <= 0 or alpha < 0 or not 0 < gmin < 1:
+                    raise ValueError
+            except ValueError:
+                ok = False
+                lines.append("Invalid settings: wavelength > 0, smoothing >= 0 and 0 < g1 min < 1 are required.")
+            try:
+                import scipy.optimize  # noqa: F401  (nnls and least_squares)
+            except ImportError:
+                ok = False
+                lines.append("The inversion needs scipy (pip install scipy).")
         palette = sample_colors()
-        if wl is not None and self.selected:
+        if not inst and ok and self.selected:
             self.root.config(cursor="watch")
             self.root.update_idletasks()
         try:
-            for idx, path in enumerate(self.selected[:MAX_SAMPLES_SHOWN] if wl is not None else []):
+            for idx, path in enumerate(self.selected[:MAX_SAMPLES_SHOWN] if ok else []):
                 d = self.samples[path]
                 c = palette[idx % len(palette)]
                 name = self._short_label(d['name'])
                 rec = dls_record(d)
-                if rec is None:
-                    lines.append(f"{name}: the file has no correlogram or measurement conditions to analyse.")
-                    continue
-                try:
-                    r = self._dls_result(path, model, wl, alpha, gmin)
-                except Exception as e:
-                    lines.append(f"{name}: inversion failed ({e}).")
-                    continue
-                g1 = np.sqrt(np.clip(rec['acf'], 0, None))
-                if self.dls_range.get() and rec.get('range'):
-                    lo, hi = rec['range']
-                    out_of = np.ones(len(g1), bool)
-                    out_of[lo:hi] = False
-                    ax1.semilogx(rec['tau'][out_of] * 1e6, g1[out_of], 'o', ms=3, mfc='none', color=c, alpha=0.5)
-                    ax1.semilogx(rec['tau'][~out_of] * 1e6, g1[~out_of], 'o', ms=3, color=c, label=name)
+                r = None
+                if not inst:
+                    if rec is None:
+                        lines.append(f"{name}: the file has no correlogram or measurement conditions to analyse.")
+                        continue
+                    try:
+                        r = self._dls_result(path, model, wl, alpha, gmin)
+                    except Exception as e:
+                        lines.append(f"{name}: inversion failed ({e}).")
+                        continue
+                # ---- correlogram as g1 = sqrt(g2 - 1), with the instrument's fit or the recomputed one
+                if d.get('tau_aligned'):
+                    tau = d['tau']
+                    g1 = np.sqrt(np.clip(d['acf'], 0, None))
+                    rng = None
+                    if inst and d['params'].get('Range_from'):
+                        rng = (d['params']['Range_from'] - 1, d['params']['Range_to'])
+                    elif not inst and self.dls_range.get() and rec.get('range'):
+                        rng = rec['range']
+                    if rng:
+                        out_of = np.ones(len(g1), bool)
+                        out_of[rng[0]:rng[1]] = False
+                        ax1.plot(tau[out_of], g1[out_of], 'o', ms=3, mfc='none', color=c, alpha=0.5)
+                        ax1.plot(tau[~out_of], g1[~out_of], 'o', ms=3, color=c, label=name)
+                    else:
+                        ax1.plot(tau, g1, 'o', ms=3, color=c, label=name)
+                    if inst:
+                        off = d.get('fit_offset', 6)
+                        if len(d['fit']) > 2:
+                            ft = tau[off:off + len(d['fit'])]
+                            ax1.plot(ft, np.sqrt(np.clip(d['fit'][:len(ft)], 0, None)), '-', lw=1.3,
+                                     color=c)[0]._cursor_name = name + " fit"
+                    else:
+                        ax1.plot(tau, r['fit'], '-', lw=1.3, color=c)[0]._cursor_name = name + " fit"
+                # ---- size distribution
+                if inst:
+                    sz = d['sz']
+                    m = sz > 0
+                    if m.sum() < 2:
+                        continue
+                    x, w0 = sz[m], d['intens'][m]
+                    if weight == DLS_WEIGHTS[0]:
+                        w, cum = w0, d['cumul'][m]
+                    else:
+                        i1 = np.ones(len(x))
+                        live = w0 > 0
+                        if rec is not None and conv != "Rayleigh" and live.any():
+                            i1[live] = self._dls_i1(d, rec, x[live], conv, rec_wl(d))
+                        else:
+                            i1 = x ** 6
+                        w = dls_reweight(x, w0, weight, i1)
+                        cum = np.cumsum(w) / w.sum() * 100.0 if w.sum() > 0 else w
+                    ray_items.append((name, x, w0, rec, rec_wl(d), self._particle_index(d)))
+                    z = d['params'].get('ZAvg_nm')
+                    lines.extend(self._inst_summary(name, d))
+                    ax2.plot(x, w / w.max(), 'o-', color=c, ms=2.5, lw=1.4, label=name)
                 else:
-                    ax1.semilogx(rec['tau'] * 1e6, g1, 'o', ms=3, color=c, label=name)
-                ax1.semilogx(rec['tau'] * 1e6, r['fit'], '-', lw=1.3, color=c)[0]._cursor_name = name + " fit"
-                i1 = self._dls_i1(d, rec, r['d'], conv, wl) if weight != DLS_WEIGHTS[0] else None
-                pw = self._weighted(r, weight, i1)
-                ax2.plot(r['d'], pw / pw.max(), '-', lw=1.6, color=c, label=name)
-                ray_items.append((name, r['d'], r['p'], rec, wl, self._particle_index(d)))
-                peak_warn += self._peak_warnings(path, name, r, wl, alpha, gmin)
-                if r['z'] is not None:
-                    ax2.axvline(r['z'], color=c, ls=':', lw=1)
-                lines.extend(self._dls_summary(path, name, r, model, wl, alpha, gmin, weight, i1, conv))
+                    i1 = self._dls_i1(d, rec, r['d'], conv, wl) if weight != DLS_WEIGHTS[0] else None
+                    pw = self._weighted(r, weight, i1)
+                    x, w, cum = r['d'], pw, np.cumsum(pw) / pw.sum() * 100.0
+                    ray_items.append((name, r['d'], r['p'], rec, wl, self._particle_index(d)))
+                    peak_warn += self._peak_warnings(path, name, r, wl, alpha, gmin)
+                    z = r['z']
+                    lines.extend(self._dls_summary(path, name, r, model, wl, alpha, gmin, weight, i1, conv))
+                    ax2.plot(x, pw / pw.max(), '-', lw=1.6, color=c, label=name)
+                if z:
+                    ax2.axvline(z, color=c, ls=':', lw=1)
+                if axc is not None:
+                    axc.plot(x, cum, '-', color=c, lw=1.5, label=name)
+                    if inst and weight == DLS_WEIGHTS[0]:
+                        for pct in (10, 50, 90):
+                            val = d['params'].get(f'D{pct}_nm')
+                            if val:
+                                axc.axvline(val, color=c, lw=0.7, ls='--', alpha=0.6)
         finally:
             self.root.config(cursor="")
+        xscale = self.size_xscale.get()
+        ax1.set_xscale('log')
+        ax1.set_ylim(-0.05, 1.2)                    # headroom for the legend
+        ax2.set_ylim(-0.02, 1.35)
         ax1.set_xlabel("Delay time τ (µs)")
         ax1.set_ylabel("$g_1$ = √ACF")
         ax1.set_title("Correlogram and fit", fontweight='bold')
-        ax2.set_xscale(self.size_xscale.get())
+        ax2.set_xscale(xscale)
         ax2.set_xlabel("Diameter (nm)")
         ax2.set_ylabel(f"{weight}-weighted (normalised)")
         ax2.set_title(f"Size distribution by {weight.lower()}", fontweight='bold')
         if self.selected and ax1.get_legend_handles_labels()[0]:
             ax1.legend(fontsize=8, loc='upper right', framealpha=0.9)
         if self.selected and any(ln.get_linestyle() == ':' for ln in ax2.lines):
-            ax2.plot([], [], ':', color='gray', lw=1, label='Z-average (cumulants)')
+            ax2.plot([], [], ':', color='gray', lw=1,
+                     label='Z-average (instrument)' if inst else 'Z-average (cumulants)')
             ax2.legend(fontsize=8, loc='upper right', framealpha=0.9)
+        if axc is not None:
+            axc.set_xscale(xscale)
+            axc.set_xlabel("Diameter (nm)")
+            axc.set_ylabel("Cumulative (%)")
+            axc.set_title(f"Cumulative distribution by {weight.lower()}", fontweight='bold')
+            axc.set_ylim(-2, 104)
+            for pct in (10, 50, 90):
+                axc.axhline(pct, color='gray', linewidth=0.5, linestyle=':')
+            if self.selected:
+                if any(ln.get_linestyle() == '--' for ln in axc.lines):
+                    axc.plot([], [], '--', color='gray', lw=0.8, label='D10, D50, D90')
+                axc.legend(fontsize=8, loc='upper left', framealpha=0.9)
         if not self.selected:
             ax1.text(0.5, 0.5, "No sample selected\n\nLoad .nsz files and select them in the list",
                      ha='center', va='center', transform=ax1.transAxes, fontsize=12, color='#94A3B8')
         self._show_warnings([self._volnum_warning(weight), self._rayleigh_warning(ray_items, weight, conv)] + peak_warn)
         self._set_dls_text(lines)
-        self._style_figure(self.fig_dls)
-        self.cur_dls.attach()
-        self.canvas_dls.draw()
+        self._style_figure(fig)
+        self.cur_size.attach()
+        self.canvas_size.draw()
 
     def _rayleigh_limit(self, rec, wl, n_particle):
         """Diameter (nm) above which the Rayleigh d^6 law is off by more than 10% for these conditions: the first size at
@@ -2063,13 +2048,12 @@ class DLSManager:
         if tab == str(self.tab_acf):
             return self.fig_acf
         if tab == str(self.tab_size):
-            return self.fig_size if self.size_source.get() == SIZE_SOURCES[0] else self.fig_dls
+            return self.fig_size
         return None
 
     def _cursor_of(self, fig):
         """The PlotCursor of one of the three figures."""
-        return {id(self.fig_acf): self.cur_acf, id(self.fig_size): self.cur_size,
-                id(self.fig_dls): self.cur_dls}.get(id(fig))
+        return {id(self.fig_acf): self.cur_acf, id(self.fig_size): self.cur_size}.get(id(fig))
 
     @staticmethod
     def _preset_for(fig):
