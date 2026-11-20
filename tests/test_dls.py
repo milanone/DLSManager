@@ -342,6 +342,15 @@ class TestNarrow(unittest.TestCase):
             self.assertAlmostEqual(self._sigma(q), 0.3 * f, delta=0.005)
             self.assertAlmostEqual(float(np.exp(np.sum(q * np.log(self.D)))), 150.0, delta=1.5)
 
+    def test_set_width_gives_the_instrument_sigma_to_narrower_and_wider_distributions(self):
+        for sigma_in in (0.10, 0.45, 0.72):
+            p = self._lognormal(200.0, sigma_in)
+            q = nsz.dls_set_width(self.D, p)
+            self.assertAlmostEqual(q.sum(), 1.0)
+            self.assertAlmostEqual(self._sigma(q), nsz.DLS_STANDARD_SIGMA, delta=0.01)
+            self.assertAlmostEqual(float(np.exp(np.sum(q * np.log(self.D)))), 200.0, delta=3.0)
+        self.assertIsNone(nsz.DLS_WIDTHS["Standard"])
+
     def test_factor_one_leaves_the_distribution_alone(self):
         p = self._lognormal(150.0, 0.3)
         np.testing.assert_allclose(nsz.dls_narrow(self.D, p, 1.0), p)
@@ -506,6 +515,20 @@ class TestDlsTab(unittest.TestCase):
                         self.assertEqual(ax.get_xlim(), lim, (scale, src))
         finally:
             app.size_xscale.set("log"); app.show_cumul.set(False)
+
+    def test_standard_width_is_the_same_for_every_weighting_input(self):
+        app = self.app
+        app.size_source.set("Recomputed"); app.notebook.select(app.tab_size)
+        app.dls_model.set(nsz.DLS_MODELS[0]); app.dls_weight.set("Intensity")
+        app.dls_width.set("Standard"); app._plot_dls()
+        text = app.dls_text.get("1.0", "end")
+        self.assertIn("width fixed at σ(ln d) 0.24", text)
+        x, y = app.fig_size.axes[1].lines[0].get_data()
+        w = np.asarray(y) / np.sum(y)
+        lnd = np.log(np.asarray(x))
+        m = np.sum(w * lnd)
+        self.assertAlmostEqual(float(np.sqrt(np.sum(w * (lnd - m) ** 2))), nsz.DLS_STANDARD_SIGMA, delta=0.015)
+        app.dls_width.set("Broad")
 
     def test_recomputed_distribution_is_drawn_with_points_like_the_instrument_one(self):
         app = self.app

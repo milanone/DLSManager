@@ -120,7 +120,12 @@ remove it: on the 130 nm latex the volume distribution still has a smaller peak 
 and volume means (130 and 134 nm), while the free distribution widens the peak and gives a number mean 27% low: volume and number
 depend on the width of the distribution, which DLS resolves worst.
 
-The *Width* choice (free distribution only) narrows the computed intensity distribution in ln d around its
+The instrument's CSV states `Distribution Form: Standard` and `Dispersity: Monodisperse` for every measurement checked, and its
+distribution always has the same width (σ of ln d about 0.24). The fourth *Width* choice, **Standard**, gives the program's
+distribution exactly that width, whatever the data say: on the latex and the 100 nm liposomes the mean, mode and S.D. then agree with the
+instrument's table within about 3% in intensity, volume and number (Mie conversion); on the 450 nm liposomes the instrument's peak
+sits 10-15% higher than the program's, and how it places the peak is not known. It emulates a property of the instrument, not a
+measurement of the sample. The *Width* choice (free distribution only) narrows the computed intensity distribution in ln d around its
 centre, in intensity and before the conversion to volume and number: Broad leaves it as computed, Medium and Narrow multiply its width by 0.7 and 0.5. The regularised
 inversion widens a narrow sample, and volume and number depend on the width through roughly exp(−kσ²). On the latex of the lot certificate
 (number mean 130 nm) Narrow gives number means of 127-136 nm and a single volume peak for four of the files, against 91-106 nm and a

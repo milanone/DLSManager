@@ -481,7 +481,9 @@ DLS_TIPS = {
              "d^6. Only used by the 'Mie shell' conversion.",
     'width': "Free (regularised) distribution only, all weightings. Broad: the distribution as computed. Medium and "
              "Narrow: it is narrowed in ln d around its centre (width x 0.7 and x 0.5), in intensity and before the "
-             "conversion to volume and number. The regularised inversion smooths and widens the true distribution, and "
+             "conversion to volume and number. Standard: the width is set to the one of the instrument's own "
+             "distribution, sigma of ln d = 0.24 for every sample (the instrument, in its Standard / Monodisperse form, "
+             "always shows a peak of that width), whatever the width computed from the data. The regularised inversion smooths and widens the true distribution, and "
              "volume and number depend strongly on the width, so a narrower distribution gives numbers closer to a "
              "narrow sample (a latex of 10% CV: number mean 130 nm with Narrow, 90-100 nm with Broad). It is an "
              "assumption about the sample, not a result: for a truly broad sample (liposomes, aggregates) it narrows "
@@ -779,7 +781,9 @@ def dls_reweight_weights(d, p, kind, per_particle):
         1.0 if kind == "Intensity" else np.asarray(per_particle, float))
 
 
-DLS_WIDTHS = {"Broad": 1.0, "Medium": 0.7, "Narrow": 0.5}   # factor on the width (sigma of ln d) of the free distribution
+DLS_STANDARD_SIGMA = 0.24      # sigma of ln d of the instrument's own distribution (0.22-0.28, mean 0.24, on 29 files)
+# factor on the width (sigma of ln d) of the free distribution; None = the fixed width of the instrument's 'Standard' form
+DLS_WIDTHS = {"Broad": 1.0, "Medium": 0.7, "Narrow": 0.5, "Standard": None}
 
 
 def dls_narrow(d, p, factor):
@@ -791,10 +795,27 @@ def dls_narrow(d, p, factor):
     p = np.asarray(p, float)
     if factor >= 1:
         return p / p.sum()
+    return _rescale_width(d, p, factor)
+
+
+def _rescale_width(d, p, factor):
+    """`p` with its width in ln d multiplied by `factor` (any positive value: below 1 narrows, above 1 widens) around its
+    mean ln d, normalised to sum 1."""
     lnd = np.log(np.asarray(d, float))
     m = np.sum(p * lnd) / np.sum(p)
     q = np.interp(m + (lnd - m) / factor, lnd, p, left=0.0, right=0.0)
     return q / q.sum()
+
+
+def dls_set_width(d, p, sigma=DLS_STANDARD_SIGMA):
+    """`p` given a width (sigma of ln d) of exactly `sigma` around its mean ln d: narrower or wider than computed. This
+    emulates the instrument's 'Standard' form, whose distribution has the same width (about 0.24) for every sample,
+    whatever the polydispersity: an assumption of the instrument, not information about the sample."""
+    p = np.asarray(p, float)
+    lnd = np.log(np.asarray(d, float))
+    m = np.sum(p * lnd) / np.sum(p)
+    cur = float(np.sqrt(np.sum(p * (lnd - m) ** 2) / np.sum(p)))
+    return _rescale_width(d, p, sigma / cur) if cur > 0 else p / p.sum()
 
 
 def dls_floor(p, fraction):
@@ -1807,14 +1828,27 @@ class DLSManager:
         """Distribution `r` of dls_analyse() in the chosen weighting (the tail cut applies to the free model)."""
         p = r['p']
         if r['peaks'] is None:
-            p = dls_narrow(r['d'], p, self._width_factor())          # every weighting, the intensity one included
+            p = self._with_width(r['d'], p)                          # every weighting, the intensity one included
             if weight != DLS_WEIGHTS[0]:
                 p = dls_floor(p, self._tail_fraction())
         return dls_reweight(r['d'], p, weight, i1)
 
     def _width_factor(self):
-        """Factor on the width of the free distribution chosen in the tab (1 = as computed)."""
+        """Factor on the width of the free distribution chosen in the tab (1 = as computed; None = the instrument's
+        fixed width of the 'Standard' choice)."""
         return DLS_WIDTHS.get(self.dls_width.get(), 1.0)
+
+    def _with_width(self, d, p):
+        """The free distribution `p` on the grid `d` with the width chosen in the tab."""
+        f = self._width_factor()
+        return dls_set_width(d, p) if f is None else dls_narrow(d, p, f)
+
+    def _width_note(self):
+        """Text for the plot summary when the width was changed ('' for Broad)."""
+        f = self._width_factor()
+        if f is None:
+            return f", width fixed at σ(ln d) {DLS_STANDARD_SIGMA:g} as the instrument's Standard (assumption)"
+        return "" if f >= 1 else f", narrowed ×{f:g} in ln d (assumption)"
 
     def _particle_index(self, d):
         """Refractive index of the particle: the value typed in the tab, else the one in the file, else 1.59."""
@@ -1887,8 +1921,7 @@ class DLSManager:
                    self._shell_params()[0], "e" if self._shell_params()[0] > 1 else "", *self._shell(), apt)}.get(conv, "Rayleigh (d^6)")
         if r['peaks'] is None:
             mean, mode, sd = dls_stats(r['d'], self._weighted(r, weight, i1))
-            narrowed = '' if self._width_factor() >= 1 else (
-                f', narrowed ×{self._width_factor():g} in ln d (assumption)')
+            narrowed = self._width_note()
             out.append(f"  Regularised distribution by {w} (α = {alpha:g}{'' if by_int else f', tail cut {100 * self._tail_fraction():g}%'}{narrowed}): mean {mean:.0f} nm, mode {mode:.0f} nm, "
                        f"S.D. {sd:.0f} nm" + (f"  |  instrument mean {inst('Mean1_nm', '{:.0f}')}, "
                        f"mode {inst('Mode_nm', '{:.0f}')}, S.D. {inst('SD1_nm', '{:.0f}')} nm" if by_int else

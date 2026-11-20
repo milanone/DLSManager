@@ -122,6 +122,15 @@ certificate, 1229748_C37485.pdf in `example data/`) is recovered exactly by the 
 the free inversion widens sigma(ln d) from 0.10 to 0.31 and gives number 95 nm: the number mean is ~exp(-k sigma^2) times the intensity
 median, so it depends on the width that DLS resolves worst.
 
+Standard width (2026-11-20): the CSVs of the instrument say `Distribution Form,Standard` and `Distribution Form(Dispersity),Monodisperse` (nsz fields
+`MeasDistForm` / `MeasDispersityMode` = 0 in all 29 files; Peak1..Peak3 exist in the CSV, only Peak1 is filled), and its distribution always has
+sigma(ln d) ~0.24. `DLS_WIDTHS['Standard']` = None -> `dls_set_width(d, p, DLS_STANDARD_SIGMA=0.24)` rescales the free distribution (narrower OR wider) to that
+sigma around its mean ln d (`_with_width`, `_width_note`; `dls_narrow` only narrows). Checked against the instrument's own table (Mie conversion):
+latex `_0834` mean/mode/SD instrument vs Standard: intensity 163/152/40 vs 162/159/39, volume 151/134/41 vs 148/134/39, number 127/119/29 vs 125/112/28;
+lipo 100 `_0843` 157/152/38 vs 154/150/37, 144/119/37 vs 140/126/35, 123/105/26 vs 119/106/26 (means within 3%); lipo 450 `_0826` intensity mean 439
+vs 370 (the instrument puts its peak ~10-15% higher: its placement rule is not reproduced, as for the media/Z ratio of 1.38). Not verified: what
+the other forms of the instrument (narrow / broad?) and the Polydisperse mode do; Francesco's guess is that Polydisperse allows several peaks.
+
 Diameter axis (2026-11-20): the distribution and cumulative panels use the same limits for both sources, 10 to 1e4 nm (log) or 0 to 1000 nm (linear); the
 instrument's table starts at 0.34 nm and the recomputed grid at 10 nm. The limits are set AGAIN after `_style_figure()`, because PlotStyleKit's style()
 autoscales x tight to the data and would undo them (it ignores a caller's xlim unless the aspect is locked; extending it would touch every host app).
