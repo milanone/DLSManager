@@ -255,9 +255,18 @@ def _read_nsz(path, ole):
 
     # Parameters
     p1  = parse_props(s('Base1'))
-    p34 = parse_props(s('Base34'))
-    d34 = s('Base34')
-    d38 = s('Base38')
+    # Measurement parameters and sample name sit in Base34 / Base38 in some software versions and in Base35 / Base39
+    # in others (files of 2026-11-19): pick the stream by its content, not by its number.
+    def by_key(key, default):
+        for entry in ole.listdir(streams=True, storages=False):
+            if len(entry) == 1 and entry[0].startswith('Base'):
+                data = ole.openstream(entry).read()
+                if key in data:
+                    return data
+        return s(default)
+    d34 = by_key(b'MeasAngle', 'Base34')
+    d38 = by_key(b'Sample_Name', 'Base38')
+    p34 = parse_props(d34)
 
     def get_str(data, key):
         m = re.search(key + b'\x00([\\x20-\\x7e]+)', data)

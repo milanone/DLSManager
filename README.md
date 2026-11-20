@@ -67,11 +67,15 @@ Z-average and PDI; the 84-bin size distribution (frequency and cumulative); and 
 instrument models or software versions, measurements with two peaks, and the date/time (the time is read from the
 measurement ID and showed `12:22:00` for a measurement that the software dates `12:22:39`).
 
-The DLS analysis was checked in LabSpectrumManager on four SZ-100 files (532 nm): the Z-average of the cumulants is within
-1-2% of the instrument's, while the PI comes out lower (the instrument's fit range is not the same). On the sample here,
-which is very polydisperse (PI 0.6), the Z-average is 4% above the instrument's, the free inversion piles up at the upper
-size limit (3000 nm) and the peak fits hit their width limit: the methods are at the edge of their validity for such a
-sample. The two-peak split is an ill-posed inversion: it is not stable between replicates and is only meaningful for sizes
+The DLS analysis was checked on 15 measurements of a polystyrene latex (certified 130 nm by TEM; 1:100 to 1:800 in 10 mM
+NaCl, 173° and 90°): the Z-average of the cumulants is within 1% of the instrument's in 12 of them and within 4% in all,
+the mode of the free distribution equals the instrument's at 173° (142 nm) and the one-peak model finds one narrow peak
+(σ of ln d about 0.25) for which a second peak is not supported (BIC). At 90° the two-peak model does improve the BIC, but the
+second peak (15-30%) sits at the width limit of the fit, which is not credible for a latex: read it as a tail, not a
+population. The PI is noisy from file to file (it often differs from the instrument's by 0.03-0.08). On the very
+polydisperse sample of `example data/` (PI 0.6) the Z-average is 4% above the instrument's, the free inversion piles up at
+the upper size limit (3000 nm) and the peak fits hit their width limit: the methods are at the edge of their validity for
+such a sample. The two-peak split is an ill-posed inversion: it is not stable between replicates and is only meaningful for sizes
 that differ by about 3 times or more; the BIC difference is shown for that reason.
 
 ## Notes on the format

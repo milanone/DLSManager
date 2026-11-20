@@ -127,6 +127,47 @@ class TestRealSample(unittest.TestCase):
             self.assertEqual(len(r['fit']), 43)
 
 
+LATEX_DIR = os.path.join(HERE, "..", "..", "LabSpectrumManager", "spettri di esempio", "20261119 DLS lattice e liposomi")
+LATEX_173 = [os.path.join(LATEX_DIR, "Polistirene 1a100 in NaCl 10 mM_084%d.nsz" % i) for i in (0, 1, 2)]
+HAS_LATEX = all(os.path.isfile(f) for f in LATEX_173)
+
+
+@unittest.skipUnless(HAS_LATEX and HAS_SCIPY, "polystyrene latex files (LabSpectrumManager sample data) not present")
+class TestLatex(unittest.TestCase):
+    """Polystyrene latex (certified 130 nm by TEM), 1:100 in 10 mM NaCl, 173 degrees: a narrow, single-size sample.
+    These files keep the measurement parameters in Base35 (other software version), not Base34."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.data = [nsz.load_nsz(f) for f in LATEX_173]
+
+    def test_parameters_are_found_in_the_newer_stream(self):
+        for d in self.data:
+            p = d['params']
+            self.assertEqual(p['Angle_deg'], 173.0)
+            self.assertAlmostEqual(p['n_solvent'], 1.333, places=3)
+            self.assertAlmostEqual(p['Temp_C'], 25.0, delta=0.3)
+            self.assertEqual(p['Lambda_nm'], 532.0)
+            self.assertTrue(p['Solvent'])
+            self.assertTrue(d['tau_aligned'])
+
+    def test_z_average_matches_the_instrument_within_one_percent(self):
+        for d in self.data:
+            r = nsz.dls_analyse(nsz.dls_record(d), nsz.DLS_MODELS[0], d['params']['Lambda_nm'])
+            self.assertAlmostEqual(r['z'] / d['params']['ZAvg_nm'], 1.0, delta=0.01)
+
+    def test_distribution_is_one_narrow_peak_at_the_instrument_size(self):
+        for d in self.data:
+            rec = nsz.dls_record(d)
+            reg = nsz.dls_analyse(rec, nsz.DLS_MODELS[0], 532.0)
+            self.assertAlmostEqual(reg['mode'] / d['params']['Mode_nm'], 1.0, delta=0.05)
+            one = nsz.dls_analyse(rec, nsz.DLS_MODELS[1], 532.0)
+            two = nsz.dls_analyse(rec, nsz.DLS_MODELS[2], 532.0)
+            self.assertAlmostEqual(one['peaks'][0]['median'] / d['params']['Mode_nm'], 1.0, delta=0.05)
+            self.assertLess(one['peaks'][0]['sigma'], 0.35)
+            self.assertLess(one['bic'] - two['bic'], 6)        # a second peak is not supported
+
+
 @unittest.skipUnless(HAS_SCIPY, "scipy not installed")
 class TestDlsTab(unittest.TestCase):
     """The tab of the application, on a synthetic sample shaped like load_nsz() output (needs a screen)."""

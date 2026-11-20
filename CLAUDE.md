@@ -64,8 +64,13 @@ results in `_dls_cache`; changing the model resets g1 min (0.1 regularised, 0.05
 The figure is saved/edited like the others (`fig_dls`, preset `double`). Tests: `tests/test_dls.py` (synthetic correlograms of
 known sizes, the real sample, the tab).
 
-Verified in LabSpectrumManager on four files: Z-average within 1-2%; PI lower than the instrument's; the two-peak split is ill-posed
-and only sensible for sizes ~3x apart. Verified here on the one sample (PI 0.6): Z-average +4.2%, PI 0.44 against 0.60; the free
+Verified on 15 polystyrene latex measurements (the `20261119 DLS lattice e liposomi` folder of LabSpectrumManager, 130 nm by TEM;
+`tests/test_dls.py::TestLatex` uses the three at 173 degrees and skips without them): Z-average -4.0..+0.3% of the instrument's
+(within 1% in 12), regularised mode 142 nm = the instrument's at 173 degrees, one peak median 140 nm with sigma ~0.25 and no
+support for a second peak at 173 degrees (BIC difference -8..-9); at 90 degrees the 2-peak fit wins on BIC but its second peak
+(14-31%) is at the sigma bound 1.2, so it is a tail, not a population. PI is within ~0.03-0.08 of the instrument's, either way.
+Also verified in LabSpectrumManager on four files; the two-peak split is ill-posed and only sensible for sizes ~3x apart.
+Verified on the `example data` sample (PI 0.6): Z-average +4.2%, PI 0.44 against 0.60; the free
 inversion has its mode at the 3000 nm limit and the peak fits reach sigma 1.2 (bound), so for this aggregated sample the sizes of
 the distribution are not reliable beyond the Z-average. Not done: the DLS results are not in the Excel export.
 
