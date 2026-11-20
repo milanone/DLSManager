@@ -479,6 +479,11 @@ DLS_TIPS = {
              "whose index excess is the lipid's (0.12, an order-of-magnitude value) averaged over the water gaps. The "
              "diameter is the outer one. The light one vesicle scatters grows about as d^4 at small sizes instead of "
              "d^6. Only used by the 'Mie shell' conversion.",
+    'aperture': "Half-width of the angular range over which the detector collects light, degrees (Mie and Mie shell). "
+                "The light one particle scatters is averaged over the scattering angle +- this value, which washes out "
+                "the narrow interference minima of a single angle; without it, a small tail of the distribution sitting "
+                "at such a minimum becomes a spurious peak in volume and number. The value for the SZ-100 is not known: "
+                "10 is an assumption. 0 = the single angle.",
     'pn': "Refractive index of the particle for the 'Mie' conversion (a solid sphere). Empty: the value stored in the "
           "file, set in the instrument software (1.6 by default). Not used by 'Mie shell' (which has its own "
           "parameters) or 'Rayleigh'.",
@@ -696,15 +701,23 @@ def mie_shell_intensity(d_nm, wavelength_nm, n_medium, shell_dn, shell_nm, angle
     return out
 
 
-def dls_per_particle(d, conversion, rec, wavelength, n_particle, shell=(4.5, 0.12)):
+DLS_APERTURE = 10.0      # default half-width (degrees) of the detector's angular acceptance; an assumption, not an SZ-100 value
+
+
+def dls_per_particle(d, conversion, rec, wavelength, n_particle, shell=(4.5, 0.12), aperture=0.0):
     """Intensity scattered by one particle of each diameter `d`: d^6 for 'Rayleigh', Mie theory for 'Mie' (needs the
-    scattering angle and solvent index of `rec`, the laser wavelength and the refractive index of the particle)."""
+    scattering angle and solvent index of `rec`, the laser wavelength and the refractive index of the particle).
+    `aperture` (degrees, half-width) averages the Mie intensity over the angles angle +- aperture (9 angles): a detector
+    collects light over an angular range, which washes out the sharp interference minima of a single angle (at 90 degrees
+    a latex of 350 nm scatters 5 times less than one of 250 nm, and dividing by that makes a spurious large peak out of the
+    small tail of a distribution). 0 is the single angle. Rayleigh is not affected."""
     d = np.asarray(d, float)
     if conversion == "Rayleigh":
         return d ** 6
+    angles = [rec['angle']] if aperture <= 0 else list(np.clip(rec['angle'] + np.linspace(-aperture, aperture, 9), 0.0, 180.0))
     if conversion == "Mie shell":
-        return mie_shell_intensity(d, wavelength, rec['n'], shell[1], shell[0], rec['angle'])
-    return mie_intensity(d, wavelength, rec['n'], n_particle, rec['angle'])
+        return np.mean([mie_shell_intensity(d, wavelength, rec['n'], shell[1], shell[0], a) for a in angles], axis=0)
+    return np.mean([mie_intensity(d, wavelength, rec['n'], n_particle, a) for a in angles], axis=0)
 
 
 def dls_reweight(d, p, kind, per_particle=None):
@@ -1130,7 +1143,7 @@ class DLSManager:
         cv.bind("<<ComboboxSelected>>", lambda e: self._on_conv())
         self._tips.extend(ToolTip(w, DLS_TIPS['conv']) for w in (lab0, cv))
         # which fields belong to which conversion: Particle n to Mie, the vesicle parameters to Mie shell
-        self._conv_fields = {"Mie": [], "Mie shell": []}
+        self._conv_fields = {"Mie": [], "Mie shell": [], "Mie|Mie shell": []}
         lab = tk.Label(conv, text="Particle n (Mie; empty = the file's)", bg=bg, font=fnt)
         lab.pack(side=tk.LEFT, padx=(10, 2))
         self.dls_vars['np'] = tk.StringVar(value='')              # empty = the index stored in the file (1.59 if absent)
@@ -1139,6 +1152,14 @@ class DLSManager:
         ent.bind("<Return>", lambda e: self._plot_dist())
         self._tips.extend(ToolTip(w, DLS_TIPS['pn']) for w in (lab, ent))
         self._conv_fields["Mie"] += [lab, ent]
+        lab = tk.Label(conv, text="Aperture ± (deg)", bg=bg, font=fnt)
+        lab.pack(side=tk.LEFT, padx=(10, 2))
+        self.dls_vars['aperture'] = tk.StringVar(value='%g' % DLS_APERTURE)
+        ent = tk.Entry(conv, textvariable=self.dls_vars['aperture'], width=4)
+        ent.pack(side=tk.LEFT)
+        ent.bind("<Return>", lambda e: self._plot_dist())
+        self._tips.extend(ToolTip(w, DLS_TIPS['aperture']) for w in (lab, ent))
+        self._conv_fields["Mie|Mie shell"] += [lab, ent]       # used by both Mie conversions
         shell = tk.Frame(self.tab_size, bg=bg)
         shell.pack(fill=tk.X, padx=14)
         lab0 = tk.Label(shell, text="Vesicle (Mie shell):", bg=bg, font=fnt)
@@ -1214,7 +1235,7 @@ class DLSManager:
         """Enable the fields of the chosen conversion and grey out the others, then redraw."""
         conv = self.dls_conv.get()
         for name, widgets in self._conv_fields.items():
-            on = name == conv
+            on = conv in name.split("|")
             for w in widgets:
                 if isinstance(w, tk.Entry):
                     w.config(state=tk.NORMAL if on else tk.DISABLED)
@@ -1779,10 +1800,21 @@ class DLSManager:
         """Light one particle scatters at each diameter of `grid` (None for Rayleigh: dls_reweight then uses d^6)."""
         if conv == "Rayleigh":
             return None
-        key = ('i1', d['path'], conv, wl, self._particle_index(d), self._shell(), len(grid))
+        key = ('i1', d['path'], conv, wl, self._particle_index(d), self._shell(), len(grid), self._aperture())
         if key not in self._dls_cache:
-            self._dls_cache[key] = dls_per_particle(grid, conv, rec, wl, self._particle_index(d), self._shell())
+            self._dls_cache[key] = dls_per_particle(grid, conv, rec, wl, self._particle_index(d), self._shell(),
+                                                    self._aperture())
         return self._dls_cache[key]
+
+    def _aperture(self):
+        """Half-width (degrees) of the detector aperture typed in the tab; the default DLS_APERTURE if invalid."""
+        try:
+            v = float(self.dls_vars['aperture'].get())
+            if 0 <= v <= 45:
+                return v
+        except ValueError:
+            pass
+        return DLS_APERTURE
 
     def _dls_summary(self, path, name, r, model, wl, alpha, gmin, weight=DLS_WEIGHTS[0], i1=None, conv="Rayleigh"):
         """Text lines for one sample: cumulants and distribution, each with the instrument's value."""
@@ -1801,9 +1833,10 @@ class DLSManager:
                        f"{inst('ZAvg_nm', '{:.1f}')} nm, PI {inst('PDI', '{:.3f}')}{diff}")
         w = weight.lower()
         by_int = weight == DLS_WEIGHTS[0]
-        how = {"Mie": f"Mie, particle n {self._particle_index(self.samples[path]):g}",
-               "Mie shell": "Mie shell, %d lamella%s (shell %.3g nm, index excess %.3g)" % (
-                   self._shell_params()[0], "e" if self._shell_params()[0] > 1 else "", *self._shell())}.get(conv, "Rayleigh (d^6)")
+        apt = f", aperture ±{self._aperture():g}°"
+        how = {"Mie": f"Mie, particle n {self._particle_index(self.samples[path]):g}{apt}",
+               "Mie shell": "Mie shell, %d lamella%s (shell %.3g nm, index excess %.3g%s)" % (
+                   self._shell_params()[0], "e" if self._shell_params()[0] > 1 else "", *self._shell(), apt)}.get(conv, "Rayleigh (d^6)")
         if r['peaks'] is None:
             mean, mode, sd = dls_stats(r['d'], self._weighted(r, weight, i1))
             out.append(f"  Regularised distribution by {w} (α = {alpha:g}{'' if by_int else f', tail cut {100 * self._tail_fraction():g}%'}): mean {mean:.0f} nm, mode {mode:.0f} nm, "

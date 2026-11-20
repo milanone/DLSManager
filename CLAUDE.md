@@ -106,6 +106,19 @@ unrestricted); the tab's 'Instrument range' checkbox (on by default) draws the e
 (the g1 minimum already cuts the tail): 450 nm liposomes, mean/mode 453/475 with and without; it does not explain the gap to the
 instrument's 413/380. `ChannelsCumuFrom/To` (1-41) and `FlAutoChannels` (2) are also in the file, not used.
 
+Detector aperture (2026-11-20): Francesco's screenshot of the free distribution of latex 1a400 by volume showed a spurious peak at ~356 nm.
+Cause: the free inversion leaves a tail (19% of the maximum at 350 nm for a 130 nm latex) and the Mie intensity of one particle at 90 degrees
+has a deep minimum at ~350 nm (2.1 against 10.9 at 250 nm, relative to 130 nm = 1), so d^3 / I1 multiplies the tail by ~5. `dls_per_particle(...,
+aperture=)` now averages the Mie / Mie shell intensity over angle +- aperture (9 angles; `DLS_APERTURE` = 10, the tab's 'Aperture' entry,
+`_aperture()`, shared by both Mie conversions through the `"Mie|Mie shell"` key of `_conv_fields`, shown in the text under the plot). The aperture
+of the SZ-100 is NOT known: 10 is an assumption. Checked in the real window on `_0834`: at +-10 the volume mode moves from 356 to 95 nm and the
+mean from 177 to 161 nm, but the peak at ~350 nm REMAINS (0.83 of the maximum; it ends at the 5% tail cut); numerically +-20 reduces it to
+0.30 (mean 144 nm; the certificate's volume mean is ~134 nm). So the aperture reduces the artefact, it does not remove it, and the small-size
+amplification (mode 95 nm) stays. Number and volume of the free distribution remain indicative. A narrow true distribution (CV 10% in the
+certificate, 1229748_C37485.pdf in `example data/`) is recovered exactly by the one-peak model on synthetic data (number 130, volume 134) but
+the free inversion widens sigma(ln d) from 0.10 to 0.31 and gives number 95 nm: the number mean is ~exp(-k sigma^2) times the intensity
+median, so it depends on the width that DLS resolves worst.
+
 Why the instrument's distribution differs from ours (investigated 2026-11-20, 29 files of LabSpectrumManager's `spettri di esempio`): the
 stored intensity distribution is NOT the inversion of the stored fit. (1) Its width is constant: always 10-11 non-zero bins, sigma of ln d
 0.22-0.28 (skew ~0.1), for PI 0.014-0.38; only the position moves (centre/Z 1.02-1.09, 1.38 for the 450 nm liposomes). (2) The instrument's fit

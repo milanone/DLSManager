@@ -241,6 +241,29 @@ class TestMie(unittest.TestCase):
         self.assertAlmostEqual(a, b, delta=0.01 * a)
 
 
+class TestAperture(unittest.TestCase):
+    REC = {'angle': 90.0, 'n': 1.333}
+
+    def test_zero_aperture_is_the_single_angle(self):
+        d = np.geomspace(60, 500, 12)
+        a = nsz.dls_per_particle(d, "Mie", self.REC, 532.0, 1.59, aperture=0.0)
+        np.testing.assert_allclose(a, nsz.mie_intensity(d, 532.0, 1.333, 1.59, 90.0))
+
+    def test_aperture_fills_the_interference_minimum_and_leaves_rayleigh_alone(self):
+        # latex at 90 degrees: one angle scatters 5 times less at 350 nm than at 250 nm, which turned the small tail of
+        # a free distribution at 350 nm into a spurious volume peak; the aperture average removes that dip
+        d = np.array([250.0, 350.0])
+        single = nsz.dls_per_particle(d, "Mie", self.REC, 532.0, 1.59, aperture=0.0)
+        wide = nsz.dls_per_particle(d, "Mie", self.REC, 532.0, 1.59, aperture=10.0)
+        self.assertLess(single[1] / single[0], 0.3)
+        self.assertGreater(wide[1] / wide[0], 1.5 * single[1] / single[0])      # 0.17 -> 0.33
+        np.testing.assert_allclose(nsz.dls_per_particle(d, "Rayleigh", self.REC, 532.0, 1.59, aperture=10.0), d ** 6)
+        # small particles: the angle does not matter for Rayleigh scatterers, so the average equals the single angle
+        s = np.array([10.0, 20.0])
+        np.testing.assert_allclose(nsz.dls_per_particle(s, "Mie", self.REC, 532.0, 1.59, aperture=10.0),
+                                   nsz.dls_per_particle(s, "Mie", self.REC, 532.0, 1.59, aperture=0.0), rtol=0.02)
+
+
 @unittest.skipUnless(HAS_SCIPY, "scipy not installed")
 class TestMieShell(unittest.TestCase):
     def test_a_shell_as_thick_as_the_radius_is_a_solid_sphere(self):
@@ -409,6 +432,19 @@ class TestDlsTab(unittest.TestCase):
         self.app._plot_dls()
         self.assertIn("Rayleigh", self.app.dls_text.get("1.0", "end"))
 
+    def test_aperture_in_the_tab(self):
+        app = self.app
+        app.size_source.set("Recomputed"); app.notebook.select(app.tab_size)
+        app.dls_weight.set("Volume"); app.dls_conv.set("Mie")
+        app.dls_vars['aperture'].set("10")
+        app._plot_dls()
+        self.assertIn("aperture ±10°", app.dls_text.get("1.0", "end"))
+        app.dls_vars['aperture'].set("abc")                            # invalid: the default
+        self.assertEqual(app._aperture(), nsz.DLS_APERTURE)
+        app.dls_vars['aperture'].set("0")
+        self.assertEqual(app._aperture(), 0.0)
+        app.dls_vars['aperture'].set("10")
+
     def test_mie_shell_conversion_in_the_tab_with_lamellae(self):
         app = self.app
         app.size_source.set("Recomputed"); app.notebook.select(app.tab_size)
@@ -434,9 +470,11 @@ class TestDlsTab(unittest.TestCase):
         states = {k: str(w.cget("state")) for k, w in entries.items()}
         self.assertEqual(states["Mie"], "normal")
         self.assertEqual(states["Mie shell"], "disabled")
+        self.assertEqual(states["Mie|Mie shell"], "normal")             # the detector aperture: both Mie conversions
         app.dls_conv.set("Mie shell"); app._on_conv(draw=False)
         self.assertEqual(str(entries["Mie shell"].cget("state")), "normal")
         self.assertEqual(str(entries["Mie"].cget("state")), "disabled")
+        self.assertEqual(str(entries["Mie|Mie shell"].cget("state")), "normal")
         app.dls_conv.set("Rayleigh"); app._on_conv(draw=False)
         self.assertEqual({str(w.cget("state")) for w in entries.values()}, {"disabled"})
 
