@@ -467,7 +467,7 @@ class TestDlsTab(unittest.TestCase):
         self.app._plot_dls()
         self.assertIn("Rayleigh", self.app.dls_text.get("1.0", "end"))
 
-    def test_width_selector_narrows_volume_and_number_only(self):
+    def test_width_selector_narrows_every_weighting(self):
         app = self.app
         app.size_source.set("Recomputed"); app.notebook.select(app.tab_size)
         app.dls_model.set(nsz.DLS_MODELS[0])
@@ -484,10 +484,27 @@ class TestDlsTab(unittest.TestCase):
         s_broad = float(broad.split("S.D. ")[1].split(" nm")[0])
         s_narrow = float(narrow.split("S.D. ")[1].split(" nm")[0])
         self.assertLess(s_narrow, s_broad)
-        app.dls_weight.set("Intensity")                                # the intensity distribution is never narrowed
-        app._plot_dls()
-        self.assertNotIn("narrowed", app.dls_text.get("1.0", "end"))
+        app.dls_weight.set("Intensity")                                # the intensity distribution narrows as well
+        app.dls_width.set("Broad"); app._plot_dls()
+        i_broad = float(app.dls_text.get("1.0", "end").split("S.D. ")[1].split(" nm")[0])
+        app.dls_width.set("Narrow"); app._plot_dls()
+        text = app.dls_text.get("1.0", "end")
+        self.assertIn("narrowed ×0.5", text)
+        self.assertLess(float(text.split("S.D. ")[1].split(" nm")[0]), 0.7 * i_broad)
         app.dls_width.set("Broad")
+
+    def test_recomputed_distribution_is_drawn_with_points_like_the_instrument_one(self):
+        app = self.app
+        app.notebook.select(app.tab_size)
+        app.dls_weight.set("Intensity")
+        styles = {}
+        for src in ("Instrument", "Recomputed"):
+            app.size_source.set(src); app._on_source()
+            ax = app.fig_size.axes[1]
+            ln = max(ax.lines, key=lambda l: len(l.get_xdata()) if l.get_linestyle() == '-' else 0)
+            styles[src] = (ln.get_marker(), ln.get_markersize(), ln.get_linewidth())
+        self.assertEqual(styles["Instrument"], styles["Recomputed"])
+        self.assertEqual(styles["Recomputed"][0], 'o')
 
     def test_aperture_in_the_tab(self):
         app = self.app

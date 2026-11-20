@@ -479,13 +479,13 @@ DLS_TIPS = {
              "whose index excess is the lipid's (0.12, an order-of-magnitude value) averaged over the water gaps. The "
              "diameter is the outer one. The light one vesicle scatters grows about as d^4 at small sizes instead of "
              "d^6. Only used by the 'Mie shell' conversion.",
-    'width': "Free (regularised) distribution only, for volume and number. Broad: the distribution as computed. Medium "
-             "and Narrow: it is narrowed in ln d around its centre (width x 0.7 and x 0.5) before the conversion. The "
-             "regularised inversion smooths and widens the true distribution, and volume and number depend strongly on "
-             "the width, so a narrower distribution gives numbers closer to a narrow sample (a latex of 10% CV: number "
-             "mean 130 nm with Narrow, 90-100 nm with Broad). It is an assumption about the sample, not a result: for a "
-             "truly broad sample (liposomes, aggregates) it narrows what is really wide. The intensity distribution "
-             "is never narrowed.",
+    'width': "Free (regularised) distribution only, all weightings. Broad: the distribution as computed. Medium and "
+             "Narrow: it is narrowed in ln d around its centre (width x 0.7 and x 0.5), in intensity and before the "
+             "conversion to volume and number. The regularised inversion smooths and widens the true distribution, and "
+             "volume and number depend strongly on the width, so a narrower distribution gives numbers closer to a "
+             "narrow sample (a latex of 10% CV: number mean 130 nm with Narrow, 90-100 nm with Broad). It is an "
+             "assumption about the sample, not a result: for a truly broad sample (liposomes, aggregates) it narrows "
+             "what is really wide, and the narrowed curve no longer follows the correlogram fit drawn beside it.",
     'aperture': "Half-width of the angular range over which the detector collects light, degrees (Mie and Mie shell). "
                 "The light one particle scatters is averaged over the scattering angle +- this value, which washes out "
                 "the narrow interference minima of a single angle; without it, a small tail of the distribution sitting "
@@ -1241,7 +1241,7 @@ class DLSManager:
         ent.pack(side=tk.LEFT)
         ent.bind("<Return>", lambda e: self._plot_dist())
         self._tips.extend(ToolTip(w, DLS_TIPS['tail']) for w in (lab, ent))
-        lab = tk.Label(ctrl2, text="Width for volume / number", bg=bg, font=fnt)
+        lab = tk.Label(ctrl2, text="Width", bg=bg, font=fnt)
         lab.pack(side=tk.LEFT, padx=(12, 2))
         self.dls_width = tk.StringVar(value="Broad")
         cmb = ttk.Combobox(ctrl2, textvariable=self.dls_width, values=list(DLS_WIDTHS), state="readonly", width=8)
@@ -1678,7 +1678,7 @@ class DLSManager:
                     peak_warn += self._peak_warnings(path, name, r, wl, alpha, gmin)
                     z = r['z']
                     lines.extend(self._dls_summary(path, name, r, model, wl, alpha, gmin, weight, i1, conv))
-                    ax2.plot(x, pw / pw.max(), '-', lw=1.6, color=c, label=name)
+                    ax2.plot(x, pw / pw.max(), 'o-', color=c, ms=2.5, lw=1.4, label=name)    # same style as the Instrument source
                 if z:
                     ax2.axvline(z, color=c, ls=':', lw=1)
                 if axc is not None:
@@ -1797,8 +1797,10 @@ class DLSManager:
     def _weighted(self, r, weight, i1):
         """Distribution `r` of dls_analyse() in the chosen weighting (the tail cut applies to the free model)."""
         p = r['p']
-        if r['peaks'] is None and weight != DLS_WEIGHTS[0]:
-            p = dls_floor(dls_narrow(r['d'], p, self._width_factor()), self._tail_fraction())
+        if r['peaks'] is None:
+            p = dls_narrow(r['d'], p, self._width_factor())          # every weighting, the intensity one included
+            if weight != DLS_WEIGHTS[0]:
+                p = dls_floor(p, self._tail_fraction())
         return dls_reweight(r['d'], p, weight, i1)
 
     def _width_factor(self):
@@ -1876,7 +1878,7 @@ class DLSManager:
                    self._shell_params()[0], "e" if self._shell_params()[0] > 1 else "", *self._shell(), apt)}.get(conv, "Rayleigh (d^6)")
         if r['peaks'] is None:
             mean, mode, sd = dls_stats(r['d'], self._weighted(r, weight, i1))
-            narrowed = '' if by_int or self._width_factor() >= 1 else (
+            narrowed = '' if self._width_factor() >= 1 else (
                 f', narrowed ×{self._width_factor():g} in ln d (assumption)')
             out.append(f"  Regularised distribution by {w} (α = {alpha:g}{'' if by_int else f', tail cut {100 * self._tail_fraction():g}%'}{narrowed}): mean {mean:.0f} nm, mode {mode:.0f} nm, "
                        f"S.D. {sd:.0f} nm" + (f"  |  instrument mean {inst('Mean1_nm', '{:.0f}')}, "

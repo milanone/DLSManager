@@ -124,8 +124,10 @@ median, so it depends on the width that DLS resolves worst.
 
 Width selector (2026-11-20, Francesco's idea: treat the computed distribution as 'broad' and offer 'medium' / 'narrow'): `DLS_WIDTHS` = Broad 1 /
 Medium 0.7 / Narrow 0.5, `dls_narrow(d, p, factor)` contracts the free distribution in ln d around its mean ln d (sigma x factor, centre kept),
-applied in `_weighted()` BEFORE the tail cut and only for volume and number of the free model (the intensity distribution is never narrowed; the
-peak models are not affected); the text says 'narrowed x0.5 in ln d (assumption)'. Default Broad (no hidden prior). Checked on the certificate's latex
+applied in `_weighted()` BEFORE the tail cut, to every weighting of the free model, the intensity one included (first version: volume and number only;
+Francesco asked to see the intensity narrow too; real window on `_0834`, intensity S.D. Broad/Medium/Narrow 71/47/33 nm, instrument 38; the peak models
+are not affected, and the correlogram fit drawn beside is not narrowed); the Recomputed distribution is drawn as points joined by a line, like the
+Instrument one (`'o-'`, ms 2.5); the text says 'narrowed x0.5 in ln d (assumption)'. Default Broad (no hidden prior). Checked on the certificate's latex
 (number 130 nm, volume ~134): number mean for Broad/Medium/Narrow: `_0841` 106/121/130 (0.5) , `_0838` 93/114/127, `_0834` 91/117/134, `_0836` 100/122/136;
 the spurious volume peaks (356 nm) vanish at 0.5 and the volume is one peak at 134-150 nm; at 1a800 (Z 166 nm) number 154 nm at 0.5. In the real
 window on `_0834`: Narrow gives volume mode 142 nm, mean 150, one peak. On synthetic data narrowing x0.35 of a sigma-0.31 distribution recovers the
