@@ -41,7 +41,7 @@ samples), `_write_xlsx` writes one workbook per sample, `_to_number_dist` conver
 | `Object5` | diameters: 17 header floats, then 84 bins |
 | `Object4` | intensity distribution: 3 header floats, then 84 values |
 | `Object31` | cumulative distribution: 4 header floats, then 84 values |
-| `Base1`, `Base34`, `Base38` | calculated results, measurement parameters, sample name; `parse_props` reads `name\0` + float32 pairs |
+| `Base1`, `Base34`/`Base35`, `Base38`/`Base39` | calculated results, measurement parameters, sample name; `parse_props` reads `name\0` + float32 pairs. **The numbers depend on the software version** (files of 2026-11-19 use Base35/Base39): `_read_nsz` picks the stream by content (`MeasAngle`, `Sample_Name`). Before this fix (2026-11-20) those files showed no angle, temperature, viscosity or solvent |
 
 Details that matter: diameter fields (`CalcMean`, `CalcPeakPos`, `CalcPerDiameter`, `Cum_fMean`, ...) are stored as
 **radii** (x2); the PDI is `Cum_fPi` because `CalcTotalPI` does not match the software; `MeasID` holds date and time.
