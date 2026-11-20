@@ -477,6 +477,9 @@ DLS_TIPS = {
              "single bilayer is about 4.5 nm; each extra lamella adds about as much) and its refractive index above "
              "the medium's (0.12 for a lipid bilayer, an order-of-magnitude value). With the outer diameter from the "
              "distribution, the light one vesicle scatters grows about as d^4 at small sizes instead of d^6.",
+    'source': "Instrument: the size distribution stored in the file by the instrument software (with its cumulative "
+              "curve). Recomputed: a new analysis of the stored correlogram, with the model chosen below (cumulants, "
+              "free distribution or one or two log-normal peaks), shown next to the instrument's values.",
     'gmin': "Only the points of the correlogram with g1 = sqrt(ACF) above this value are used: the tail is mostly "
             "noise. 0.1 for the regularised model, 0.05 for the peaks.",
 }
@@ -609,6 +612,7 @@ def dls_analyse(rec, model=DLS_MODELS[0], wavelength=532.0, alpha=1.0, gmin=None
 
 DLS_WEIGHTS = ("Intensity", "Volume", "Number")
 DLS_CONVERSIONS = ("Mie", "Mie shell", "Rayleigh")
+SIZE_SOURCES = ("Instrument", "Recomputed")
 _DLS_POWER = {"Intensity": 0, "Volume": 3, "Number": 6}   # Rayleigh: I ~ N d^6, so volume ~ I / d^3 and number ~ I / d^6
 
 
@@ -762,6 +766,11 @@ def dls_stats(d, p):
     return mean, float(d[np.argmax(p)]), float(np.sqrt(np.sum(p * (d - mean) ** 2) / np.sum(p)))
 
 
+def rec_wl(d):
+    """Laser wavelength (nm) of a sample: the one stored in the file, else 532 (SZ-100)."""
+    return d['params'].get('Lambda_nm') or 532.0
+
+
 def dls_record(d):
     """The input of dls_analyse() for a sample dict of load_nsz(): delays in seconds and the measurement conditions
     (angle, solvent index, viscosity, temperature) read from the file. None if the file lacks any of them or the delays
@@ -891,22 +900,17 @@ class DLSManager:
         self.tab_acf = tk.Frame(self.notebook, bg="white")
         self.notebook.add(self.tab_acf, text="  Autocorrelogram  ")
 
-        # Tab 2: Size distribution
+        # Tab 2: Size distribution (the instrument's own result or a new analysis of the correlogram)
         self.tab_size = tk.Frame(self.notebook, bg="white")
-        self.notebook.add(self.tab_size, text="  Distribution  ")
+        self.notebook.add(self.tab_size, text="  Size distribution  ")
 
         # Tab 3: Parameters
         self.tab_params = tk.Frame(self.notebook, bg="white")
         self.notebook.add(self.tab_params, text="  Parameters  ")
 
-        # Tab 4: DLS analysis of the stored correlogram
-        self.tab_dls = tk.Frame(self.notebook, bg="white")
-        self.notebook.add(self.tab_dls, text="  DLS analysis  ")
-
         self._build_acf_tab()
         self._build_size_tab()
         self._build_params_tab()
-        self._build_dls_tab()
         # the inversions take a moment: they run only while their tab is shown
         self.notebook.bind("<<NotebookTabChanged>>", lambda e: self._refresh_dls())
 
@@ -937,34 +941,126 @@ class DLSManager:
         self.canvas_acf.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
 
     def _build_size_tab(self):
-        ctrl = tk.Frame(self.tab_size, bg="white", pady=4)
-        ctrl.pack(fill=tk.X, padx=14)
-
-        tk.Label(ctrl, text="X scale:", bg="white", font=("Helvetica",9)).pack(side=tk.LEFT)
+        """One tab for the size distribution. Source 'Instrument': the distribution stored in the file (and its
+        cumulative curve). Source 'Recomputed': a new analysis of the stored correlogram (cumulants, free or
+        log-normal distributions). Weighting (intensity, volume, number), the conversion used for volume and number and
+        the x scale apply to both."""
+        self._tips = []
+        self.dls_vars = {}
+        bg, fnt = "white", ("Helvetica", 9)
+        top = tk.Frame(self.tab_size, bg=bg, pady=4)
+        top.pack(fill=tk.X, padx=14)
+        tk.Label(top, text="Source:", bg=bg, font=fnt).pack(side=tk.LEFT)
+        self.size_source = tk.StringVar(value=SIZE_SOURCES[0])
+        for v in SIZE_SOURCES:
+            rb = tk.Radiobutton(top, text=v, variable=self.size_source, value=v, bg=bg, font=fnt,
+                                command=self._on_source)
+            rb.pack(side=tk.LEFT, padx=2)
+            self._tips.append(ToolTip(rb, DLS_TIPS['source']))
+        ttk.Separator(top, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=8, pady=2)
+        tk.Label(top, text="X scale:", bg=bg, font=fnt).pack(side=tk.LEFT)
         self.size_xscale = tk.StringVar(value="log")
-        for val, lbl in [("log","Log"),("linear","Linear")]:
-            tk.Radiobutton(ctrl, text=lbl, variable=self.size_xscale, value=val,
-                           bg="white", font=("Helvetica",9),
-                           command=self._plot_size).pack(side=tk.LEFT, padx=4)
+        for val, lbl in [("log", "Log"), ("linear", "Linear")]:
+            tk.Radiobutton(top, text=lbl, variable=self.size_xscale, value=val, bg=bg, font=fnt,
+                           command=self._plot_dist).pack(side=tk.LEFT, padx=4)
+        ttk.Separator(top, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=8, pady=2)
+        tk.Label(top, text="Weighting:", bg=bg, font=fnt).pack(side=tk.LEFT)
+        self.dls_weight = tk.StringVar(value=DLS_WEIGHTS[0])
+        for w in DLS_WEIGHTS:
+            rb = tk.Radiobutton(top, text=w, variable=self.dls_weight, value=w, bg=bg, font=fnt, command=self._plot_dist)
+            rb.pack(side=tk.LEFT, padx=2)
+            self._tips.append(ToolTip(rb, DLS_TIPS['weight']))
 
-        ttk.Separator(ctrl, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=8, pady=2)
-        tk.Label(ctrl, text="Representation:", bg="white", font=("Helvetica",9)).pack(side=tk.LEFT)
-        self.size_repr = tk.StringVar(value="intensity")
-        for val, lbl in [("intensity","Intensity"),("number","Number")]:
-            tk.Radiobutton(ctrl, text=lbl, variable=self.size_repr, value=val,
-                           bg="white", font=("Helvetica",9),
-                           command=self._plot_size).pack(side=tk.LEFT, padx=4)
+        conv = tk.Frame(self.tab_size, bg=bg)
+        conv.pack(fill=tk.X, padx=14)
+        lab0 = tk.Label(conv, text="Conversion to volume / number:", bg=bg, font=fnt)
+        lab0.pack(side=tk.LEFT)
+        self.dls_conv = tk.StringVar(value=DLS_CONVERSIONS[0])
+        cv = ttk.Combobox(conv, textvariable=self.dls_conv, values=DLS_CONVERSIONS, state="readonly", width=9)
+        cv.pack(side=tk.LEFT, padx=(4, 0))
+        cv.bind("<<ComboboxSelected>>", lambda e: self._plot_dist())
+        self._tips.extend(ToolTip(w, DLS_TIPS['conv']) for w in (lab0, cv))
+        for text, key, val, width, tip in (("Particle n", 'np', '', 6, 'conv'),
+                                           ("shell thickness (nm)", 'shell_t', '4.5', 5, 'shell'),
+                                           ("index excess", 'shell_dn', '0.12', 5, 'shell')):
+            lab = tk.Label(conv, text=text, bg=bg, font=fnt)
+            lab.pack(side=tk.LEFT, padx=(10, 2))
+            self.dls_vars[key] = tk.StringVar(value=val)          # np empty = the index stored in the file (1.59 if absent)
+            ent = tk.Entry(conv, textvariable=self.dls_vars[key], width=width)
+            ent.pack(side=tk.LEFT)
+            ent.bind("<Return>", lambda e: self._plot_dist())
+            self._tips.extend(ToolTip(w, DLS_TIPS[tip]) for w in (lab, ent))
 
-        ttk.Separator(ctrl, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=8, pady=2)
+        # controls and plot of each source; only one of the two is shown
+        self.box_inst = tk.Frame(self.tab_size, bg=bg)
+        ctrl = tk.Frame(self.box_inst, bg=bg)
+        ctrl.pack(fill=tk.X, padx=14)
         self.show_cumul = tk.BooleanVar(value=True)
-        tk.Checkbutton(ctrl, text="Show cumulative", variable=self.show_cumul,
-                       bg="white", font=("Helvetica",9),
+        tk.Checkbutton(ctrl, text="Show cumulative", variable=self.show_cumul, bg=bg, font=fnt,
                        command=self._plot_size).pack(side=tk.LEFT, padx=4)
-
-        self.fig_size = Figure(figsize=(9,5.5), dpi=100, facecolor="white")
-        self.canvas_size = FigureCanvasTkAgg(self.fig_size, self.tab_size)
-        NavigationToolbar2Tk(self.canvas_size, self.tab_size).pack(side=tk.BOTTOM, fill=tk.X)
+        self.fig_size = Figure(figsize=(9, 5.5), dpi=100, facecolor="white")
+        self.canvas_size = FigureCanvasTkAgg(self.fig_size, self.box_inst)
+        NavigationToolbar2Tk(self.canvas_size, self.box_inst).pack(side=tk.BOTTOM, fill=tk.X)
         self.canvas_size.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
+
+        self.box_rec = tk.Frame(self.tab_size, bg=bg)
+        ctrl = tk.Frame(self.box_rec, bg=bg)
+        ctrl.pack(fill=tk.X, padx=14)
+        tk.Label(ctrl, text="Model:", bg=bg, font=fnt).pack(side=tk.LEFT)
+        self.dls_model = tk.StringVar(value=DLS_MODELS[0])
+        cmb = ttk.Combobox(ctrl, textvariable=self.dls_model, values=DLS_MODELS, state="readonly", width=30)
+        cmb.pack(side=tk.LEFT, padx=(4, 0))
+        self._tips.append(ToolTip(cmb, DLS_TIPS['model']))
+        for text, key, val in (("Wavelength (nm)", 'wl', '532'), ("Smoothing α", 'alpha', '1.0'),
+                               ("g1 min", 'gmin', '0.1')):
+            lab = tk.Label(ctrl, text=text, bg=bg, font=fnt)
+            lab.pack(side=tk.LEFT, padx=(12, 2))
+            self.dls_vars[key] = tk.StringVar(value=val)
+            ent = tk.Entry(ctrl, textvariable=self.dls_vars[key], width=6)
+            ent.pack(side=tk.LEFT)
+            ent.bind("<Return>", lambda e: self._plot_dls())
+            self._tips.extend(ToolTip(w, DLS_TIPS[key]) for w in (lab, ent))
+        # the usual g1 cut-off depends on the model (0.1 regularised, 0.05 peaks)
+        self.dls_model.trace_add("write", self._on_dls_model)
+        ctrl2 = tk.Frame(self.box_rec, bg=bg)
+        ctrl2.pack(fill=tk.X, padx=14)
+        self.dls_range = tk.BooleanVar(value=True)
+        rb = tk.Checkbutton(ctrl2, text="Instrument range", variable=self.dls_range, bg=bg, font=fnt,
+                            command=self._plot_dls)
+        rb.pack(side=tk.LEFT)
+        self._tips.append(ToolTip(rb, DLS_TIPS['range']))
+        lab = tk.Label(ctrl2, text="Tail cut (% of max)", bg=bg, font=fnt)
+        lab.pack(side=tk.LEFT, padx=(12, 2))
+        self.dls_vars['tail'] = tk.StringVar(value='5')
+        ent = tk.Entry(ctrl2, textvariable=self.dls_vars['tail'], width=4)
+        ent.pack(side=tk.LEFT)
+        ent.bind("<Return>", lambda e: self._plot_dls())
+        self._tips.extend(ToolTip(w, DLS_TIPS['tail']) for w in (lab, ent))
+        btn = tk.Button(ctrl2, text="Compute", command=self._plot_dls, bg="#FEF9C3", font=fnt)
+        btn.pack(side=tk.LEFT, padx=12)
+        self.dls_text = tk.Text(self.box_rec, height=9, font=("Consolas", 9), bg="#F8FAFC", relief=tk.FLAT,
+                                wrap=tk.WORD, state=tk.DISABLED)
+        self.dls_text.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=(0, 6))
+        self.fig_dls = Figure(figsize=(9, 4.5), dpi=100, facecolor="white")
+        self.canvas_dls = FigureCanvasTkAgg(self.fig_dls, self.box_rec)
+        NavigationToolbar2Tk(self.canvas_dls, self.box_rec).pack(side=tk.BOTTOM, fill=tk.X)
+        self.canvas_dls.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
+        self._on_source()
+
+    def _on_source(self):
+        """Show the controls and the plot of the chosen source and draw it."""
+        inst = self.size_source.get() == SIZE_SOURCES[0]
+        self.box_rec.pack_forget()
+        self.box_inst.pack_forget()
+        (self.box_inst if inst else self.box_rec).pack(fill=tk.BOTH, expand=True)
+        self._plot_dist()
+
+    def _plot_dist(self):
+        """Redraw the plot of the current source (the recomputed one only while the tab is visible: it takes a moment)."""
+        if self.size_source.get() == SIZE_SOURCES[0]:
+            self._plot_size()
+        else:
+            self._refresh_dls()
 
     def _build_params_tab(self):
         frame = tk.Frame(self.tab_params, bg="white")
@@ -999,81 +1095,6 @@ class DLSManager:
         # Alternating rows
         self.tree.tag_configure("odd",  background="#F8FAFC")
         self.tree.tag_configure("even", background="white")
-
-    def _build_dls_tab(self):
-        ctrl = tk.Frame(self.tab_dls, bg="white", pady=4)
-        ctrl.pack(fill=tk.X, padx=14)
-        self._tips = []
-        tk.Label(ctrl, text="Model:", bg="white", font=("Helvetica", 9)).pack(side=tk.LEFT)
-        self.dls_model = tk.StringVar(value=DLS_MODELS[0])
-        cmb = ttk.Combobox(ctrl, textvariable=self.dls_model, values=DLS_MODELS, state="readonly", width=30)
-        cmb.pack(side=tk.LEFT, padx=(4, 0))
-        self._tips.append(ToolTip(cmb, DLS_TIPS['model']))
-        self.dls_vars = {}
-        for text, key, val in (("Wavelength (nm)", 'wl', '532'), ("Smoothing α", 'alpha', '1.0'),
-                               ("g1 min", 'gmin', '0.1')):
-            lab = tk.Label(ctrl, text=text, bg="white", font=("Helvetica", 9))
-            lab.pack(side=tk.LEFT, padx=(12, 2))
-            self.dls_vars[key] = tk.StringVar(value=val)
-            ent = tk.Entry(ctrl, textvariable=self.dls_vars[key], width=6)
-            ent.pack(side=tk.LEFT)
-            ent.bind("<Return>", lambda e: self._plot_dls())
-            self._tips.extend(ToolTip(w, DLS_TIPS[key]) for w in (lab, ent))
-        # the usual g1 cut-off depends on the model (0.1 regularised, 0.05 peaks)
-        self.dls_model.trace_add("write", self._on_dls_model)
-        ctrl2 = tk.Frame(self.tab_dls, bg="white")
-        ctrl2.pack(fill=tk.X, padx=14)
-        tk.Label(ctrl2, text="Weighting:", bg="white", font=("Helvetica", 9)).pack(side=tk.LEFT)
-        self.dls_weight = tk.StringVar(value=DLS_WEIGHTS[0])
-        for w in DLS_WEIGHTS:
-            rb = tk.Radiobutton(ctrl2, text=w, variable=self.dls_weight, value=w, bg="white", font=("Helvetica", 9),
-                                command=self._plot_dls)
-            rb.pack(side=tk.LEFT, padx=2)
-            self._tips.append(ToolTip(rb, DLS_TIPS['weight']))
-        self.dls_conv = tk.StringVar(value=DLS_CONVERSIONS[0])
-        cv = ttk.Combobox(ctrl2, textvariable=self.dls_conv, values=DLS_CONVERSIONS, state="readonly", width=9)
-        cv.pack(side=tk.LEFT, padx=(8, 0))
-        cv.bind("<<ComboboxSelected>>", lambda e: self._plot_dls())
-        self.dls_range = tk.BooleanVar(value=True)
-        rb = tk.Checkbutton(ctrl2, text="Instrument range", variable=self.dls_range, bg="white", font=("Helvetica", 9),
-                            command=self._plot_dls)
-        rb.pack(side=tk.LEFT, padx=(12, 0))
-        self._tips.append(ToolTip(rb, DLS_TIPS['range']))
-        lab = tk.Label(ctrl2, text="Tail cut (% of max)", bg="white", font=("Helvetica", 9))
-        lab.pack(side=tk.LEFT, padx=(8, 2))
-        self.dls_vars['tail'] = tk.StringVar(value='5')
-        ent = tk.Entry(ctrl2, textvariable=self.dls_vars['tail'], width=4)
-        ent.pack(side=tk.LEFT)
-        ent.bind("<Return>", lambda e: self._plot_dls())
-        self._tips.extend(ToolTip(w, DLS_TIPS['tail']) for w in (lab, ent))
-        lab = tk.Label(ctrl2, text="Particle n", bg="white", font=("Helvetica", 9))
-        lab.pack(side=tk.LEFT, padx=(8, 2))
-        self.dls_vars['np'] = tk.StringVar(value='')    # empty = the index stored in the file (1.59 if absent)
-        ent = tk.Entry(ctrl2, textvariable=self.dls_vars['np'], width=6)
-        ent.pack(side=tk.LEFT)
-        ent.bind("<Return>", lambda e: self._plot_dls())
-        self._tips.extend(ToolTip(w, DLS_TIPS['conv']) for w in (cv, lab, ent))
-        ctrl3 = tk.Frame(self.tab_dls, bg="white")
-        ctrl3.pack(fill=tk.X, padx=14)
-        tk.Label(ctrl3, text="Vesicle shell (Mie shell):", bg="white", font=("Helvetica", 9)).pack(side=tk.LEFT)
-        for text, key, val in (("thickness (nm)", 'shell_t', '4.5'), ("index excess", 'shell_dn', '0.12')):
-            lab = tk.Label(ctrl3, text=text, bg="white", font=("Helvetica", 9))
-            lab.pack(side=tk.LEFT, padx=(8, 2))
-            self.dls_vars[key] = tk.StringVar(value=val)
-            ent = tk.Entry(ctrl3, textvariable=self.dls_vars[key], width=6)
-            ent.pack(side=tk.LEFT)
-            ent.bind("<Return>", lambda e: self._plot_dls())
-            self._tips.extend(ToolTip(w, DLS_TIPS['shell']) for w in (lab, ent))
-        btn = tk.Button(ctrl2, text="Compute", command=self._plot_dls, bg="#FEF9C3", font=("Helvetica", 9))
-        btn.pack(side=tk.LEFT, padx=12)
-
-        self.dls_text = tk.Text(self.tab_dls, height=9, font=("Consolas", 9), bg="#F8FAFC", relief=tk.FLAT,
-                                wrap=tk.WORD, state=tk.DISABLED)
-        self.dls_text.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=(0, 6))
-        self.fig_dls = Figure(figsize=(9, 4.5), dpi=100, facecolor="white")
-        self.canvas_dls = FigureCanvasTkAgg(self.fig_dls, self.tab_dls)
-        NavigationToolbar2Tk(self.canvas_dls, self.tab_dls).pack(side=tk.BOTTOM, fill=tk.X)
-        self.canvas_dls.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
 
     # ── Drag & Drop ───────────────────────────────────────────────────────────
 
@@ -1167,7 +1188,7 @@ class DLSManager:
 
     def _refresh_dls(self):
         """Redraw the DLS tab, but only while it is the visible one."""
-        if self.notebook.select() == str(self.tab_dls):
+        if self.notebook.select() == str(self.tab_size) and self.size_source.get() == SIZE_SOURCES[1]:
             self._plot_dls()
 
     # ── Plot style (PlotStyleKit) ─────────────────────────────────────────────
@@ -1288,7 +1309,8 @@ class DLSManager:
     def _plot_size(self):
         self.fig_size.clear()
 
-        by_number = self.size_repr.get() == "number"
+        weight = self.dls_weight.get()
+        by_int = weight == DLS_WEIGHTS[0]
         show_c = self.show_cumul.get()
         if show_c and self.selected:
             gs = self.fig_size.add_gridspec(1, 2, wspace=0.3)
@@ -1311,38 +1333,49 @@ class DLSManager:
             if mask.sum() < 2:
                 continue
 
-            if by_number:
-                freq, cumul = self._to_number_dist(sz, d['intens'])
-            else:
+            if by_int:
                 freq  = d['intens']
                 cumul = d['cumul']
+            else:
+                # volume or number: the stored intensity distribution divided by the light one particle scatters
+                rec = dls_record(d)
+                conv = self.dls_conv.get() if rec is not None else "Rayleigh"
+                i1 = np.ones(len(sz))
+                live = (sz > 0) & (d['intens'] > 0)
+                if conv != "Rayleigh" and live.any():
+                    i1[live] = self._dls_i1(d, rec, sz[live], conv, rec_wl(d))
+                else:
+                    i1 = sz ** 6
+                freq = 100.0 * dls_reweight(np.where(sz > 0, sz, 1.0), np.where(live, d['intens'], 0.0), weight, i1)
+                cumul = np.cumsum(freq)
+                cumul = cumul / cumul[-1] * 100.0 if cumul[-1] > 0 else cumul
 
             ax.plot(sz[mask], freq[mask], 'o-', color=c, markersize=3,
                     linewidth=1.5, label=lbl)
             ax.fill_between(sz[mask], freq[mask], alpha=0.08, color=c)
 
             p = d['params']
-            if not by_number and p.get('D50_nm'):
+            if by_int and p.get('D50_nm'):
                 ax.axvline(p['D50_nm'], color=c, linewidth=0.8,
                            linestyle=':', alpha=0.7)
 
             if axc is not None:
                 axc.plot(sz[mask], cumul[mask], 'o-', color=c, markersize=3,
                          linewidth=1.5, label=lbl)
-                if not by_number:
+                if by_int:
                     for pct in [10, 50, 90]:
                         val = p.get(f'D{pct}_nm')
                         if val:
                             axc.axvline(val, color=c, linewidth=0.7,
                                         linestyle='--', alpha=0.6)
 
-        repr_lbl = "number" if by_number else "intensity"
+        repr_lbl = weight.lower()
         ax.margins(y=0.18)                  # headroom so the legend does not cover the top of the peak
         top = ax.get_ylim()[1]
         ax.set_ylim(-0.02 * top, top)       # distributions are >= 0: no empty space below the baseline
         ax.set_xscale(xscale)
         ax.set_xlabel("Diameter (nm)", fontsize=10)
-        ax.set_ylabel(f"{'Number' if by_number else 'Intensity'} (%)", fontsize=10)
+        ax.set_ylabel(f"{weight} (%)", fontsize=10)
         ax.set_title(f"Size distribution by {repr_lbl}", fontsize=11, fontweight='bold')
         if self.selected:
             ax.legend(fontsize=8, loc='upper right', framealpha=0.9)
@@ -1438,7 +1471,7 @@ class DLSManager:
                 ax1.semilogx(rec['tau'] * 1e6, r['fit'], '-', lw=1.3, color=c)
                 i1 = self._dls_i1(d, rec, r['d'], conv, wl) if weight != DLS_WEIGHTS[0] else None
                 pw = self._weighted(r, weight, i1)
-                ax2.semilogx(r['d'], pw / pw.max(), '-', lw=1.6, color=c, label=name)
+                ax2.plot(r['d'], pw / pw.max(), '-', lw=1.6, color=c, label=name)
                 if r['z'] is not None:
                     ax2.axvline(r['z'], color=c, ls=':', lw=1)
                 lines.extend(self._dls_summary(path, name, r, model, wl, alpha, gmin, weight, i1, conv))
@@ -1447,6 +1480,7 @@ class DLSManager:
         ax1.set_xlabel("Delay time τ (µs)")
         ax1.set_ylabel("$g_1$ = √ACF")
         ax1.set_title("Correlogram and fit", fontweight='bold')
+        ax2.set_xscale(self.size_xscale.get())
         ax2.set_xlabel("Diameter (nm)")
         ax2.set_ylabel(f"{weight}-weighted (normalised)")
         ax2.set_title(f"Size distribution by {weight.lower()}", fontweight='bold')
@@ -1771,9 +1805,7 @@ class DLSManager:
         if tab == str(self.tab_acf):
             return self.fig_acf
         if tab == str(self.tab_size):
-            return self.fig_size
-        if tab == str(self.tab_dls):
-            return self.fig_dls
+            return self.fig_size if self.size_source.get() == SIZE_SOURCES[0] else self.fig_dls
         return None
 
     @staticmethod
@@ -1791,7 +1823,7 @@ class DLSManager:
     def _figure_or_warn(self, title):
         fig = self._current_figure()
         if fig is None:
-            messagebox.showwarning(title, "Select samples and open the Autocorrelogram, Distribution or DLS analysis tab.")
+            messagebox.showwarning(title, "Select samples and open the Autocorrelogram or Size distribution tab.")
         return fig
 
     def save_figure_image(self):

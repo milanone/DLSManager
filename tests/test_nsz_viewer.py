@@ -24,26 +24,42 @@ spec.loader.exec_module(nsz)
 DATA = os.path.join(HERE, "..", "example data")
 
 
-def find_sample():
-    """(nsz, csv) of the real sample: the CSV in 'example data/' names the .nsz it was exported from in its first item
-    line; that file is looked for next to the CSV, then in the sample folders of LabSpectrumManager (the .nsz
-    placed in 'example data/' may be another measurement than the one the CSV belongs to). (None, None) if absent."""
+def find_samples():
+    """[(nsz, csv), ...] of the real samples: every CSV in 'example data/' names, in its first item line, the .nsz it was
+    exported from. That file is looked for next to the CSV, then in the sample folders of LabSpectrumManager (the file
+    names of the CSV and of the .nsz may differ: the software numbers its exports on its own, so the name inside the CSV
+    is what counts). Pairs whose .nsz cannot be found are left out."""
     import glob
-    csvs = sorted(glob.glob(os.path.join(DATA, "*.csv")))
-    if not csvs:
-        return None, None
-    with open(csvs[0], newline="", encoding="latin-1") as f:
-        rows = list(csv.reader(f))
-    name = next((r[0] for r in rows if r and r[0].lower().endswith(".nsz")), "")
-    for folder in (DATA, *glob.glob(os.path.join(HERE, "..", "..", "LabSpectrumManager", "spettri di esempio", "*"))):
-        path = os.path.join(folder, name)
-        if name and os.path.isfile(path):
-            return path, csvs[0]
-    return None, csvs[0]
+    out = []
+    folders = (DATA, *glob.glob(os.path.join(HERE, "..", "..", "LabSpectrumManager", "spettri di esempio", "*")))
+    for csv_path in sorted(glob.glob(os.path.join(DATA, "*.csv"))):
+        with open(csv_path, newline="", encoding="latin-1") as f:
+            rows = list(csv.reader(f))
+        name = next((r[0] for r in rows if r and r[0].lower().endswith(".nsz")), "")
+        path = next((os.path.join(d, name) for d in folders if name and os.path.isfile(os.path.join(d, name))), None)
+        if path:
+            out.append((path, csv_path))
+    return out
 
 
-SAMPLE, SAMPLE_CSV = find_sample()
-HAS_SAMPLE = SAMPLE is not None
+SAMPLES = find_samples()
+SAMPLE, SAMPLE_CSV = SAMPLES[0] if SAMPLES else (None, None)
+HAS_SAMPLE = bool(SAMPLES)
+
+
+def each_sample(test):
+    """Run a TestRealSample test once for every (nsz, csv) pair, each as a subTest."""
+    import functools
+
+    @functools.wraps(test)
+    def wrapper(self):
+        for path, csv_path in SAMPLES:
+            with self.subTest(sample=os.path.basename(path)):
+                self.path = path
+                self.d = nsz.load_nsz(path)
+                self.items, self.table, self.resid_csv, self.corr_csv = read_software_csv(csv_path)
+                test(self)
+    return wrapper
 
 
 def read_software_csv(path):
@@ -138,11 +154,9 @@ class TestHelpers(unittest.TestCase):
 
 @unittest.skipUnless(HAS_SAMPLE, "real sample (.nsz + instrument CSV) not present")
 class TestRealSample(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.d = nsz.load_nsz(SAMPLE)
-        cls.items, cls.table, cls.resid_csv, cls.corr_csv = read_software_csv(SAMPLE_CSV)
+    """Each test runs on every sample pair (two software layouts: the number of the Object streams differs)."""
 
+    @each_sample
     def test_results_match_the_software(self):
         p = self.d["params"]
         self.assertAlmostEqual(p["Mean1_nm"], float(self.items["Total Mean"]), delta=0.06)
@@ -151,6 +165,7 @@ class TestRealSample(unittest.TestCase):
         self.assertAlmostEqual(p["ZAvg_nm"], float(self.items["Z-Average"]), delta=0.06)
         self.assertAlmostEqual(p["PDI"], float(self.items["PI"]), delta=0.0006)
 
+    @each_sample
     def test_measurement_parameters(self):
         p = self.d["params"]
         self.assertEqual(p["Angle_deg"], float(self.items["Scattering Angle"]))
@@ -158,12 +173,14 @@ class TestRealSample(unittest.TestCase):
         self.assertAlmostEqual(p["Visc_mPas"], float(self.items["Dispersion Medium Viscosity"]), delta=0.001)
         self.assertEqual(p["Sample_Name"], self.items["Sample Name"])
 
+    @each_sample
     def test_size_distribution_matches_the_software_table(self):
         self.assertEqual(len(self.d["sz"]), len(self.table))
         np.testing.assert_allclose(self.d["sz"], self.table[:, 0], atol=0.006)     # the CSV rounds to 2 decimals
         np.testing.assert_allclose(self.d["intens"], self.table[:, 1], atol=0.0006)
         np.testing.assert_allclose(self.d["cumul"], self.table[:, 2], atol=0.0006)
 
+    @each_sample
     def test_correlation_matches_the_software_g1_squared(self):
         # The software exports g1; the file stores g1 squared. CSV row k is channel 7 + k (the 6 channels excluded from
         # the fit plus one); the CSV also floors g1 at 0.01, so compare only the values above the floor.
@@ -173,12 +190,14 @@ class TestRealSample(unittest.TestCase):
         ok = g1_csv > 0.011
         np.testing.assert_allclose(np.sqrt(np.clip(acf[ok], 0, None)), g1_csv[ok], atol=2e-5)
 
+    @each_sample
     def test_fit_matches_the_software_g1_squared(self):
         fit_csv = self.corr_csv[:, 2]
         n = int((fit_csv > 0).sum())                          # the fit stops where the software fit is 0
         fit = self.d["fit"][1:1 + n]
         np.testing.assert_allclose(np.sqrt(fit), fit_csv[:n], atol=2e-5)
 
+    @each_sample
     def test_residuals_follow_the_software_pattern(self):
         # Residuals are of g1 in the CSV and of g1 squared in the file, so they are not equal: check that they are
         # clearly correlated at the expected alignment (CSV row k = residual k + 1) and worse at the neighbours.
@@ -191,6 +210,7 @@ class TestRealSample(unittest.TestCase):
         self.assertGreater(corr(1), 0.75)
         self.assertGreater(corr(1), max(corr(0), corr(2)))
 
+    @each_sample
     def test_delays_are_matched_to_the_channels(self):
         # Object3 lacks the first 6 delays: reading it paired channel 0 (0.1 us) with 1 us and dropped the last 6 points.
         d = self.d
@@ -199,13 +219,14 @@ class TestRealSample(unittest.TestCase):
         self.assertAlmostEqual(d["tau"][0], 0.1, places=5)
         self.assertAlmostEqual(d["tau"][6], 1.0, places=5)     # channel 6 = first channel of the fit
         self.assertAlmostEqual(d["tau"][-1], 108858.9, delta=0.5)
-        ole = nsz.olefile.OleFileIO(SAMPLE)                    # the legacy Object2 values are the same numbers
+        ole = nsz.olefile.OleFileIO(self.path)                 # the legacy Object2 values are the same numbers
         try:
             obj2 = nsz.f32(ole.openstream("Object2").read())[3:46]
         finally:
             ole.close()
         np.testing.assert_allclose(d["acf"], obj2, atol=1e-6)
 
+    @each_sample
     def test_correlation_function_shape(self):
         d = self.d
         self.assertEqual(len(d["tau"]), len(d["acf"]))
@@ -264,7 +285,7 @@ class TestApplication(unittest.TestCase):
         self.app.show_resid.set(True)
         self.app._plot_acf()
         self.assertEqual(len(self.app.fig_acf.axes), 2)
-        self.app.size_repr.set("number")
+        self.app.dls_weight.set("Number")
         self.app.show_cumul.set(False)
         self.app._plot_size()
         self.assertEqual(len(self.app.fig_size.axes), 1)

@@ -16,7 +16,7 @@ nsz = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(nsz)
 
 sys.path.insert(0, HERE)
-from test_nsz_viewer import SAMPLE       # the .nsz that the CSV in 'example data/' was exported from
+from test_nsz_viewer import SAMPLES      # (.nsz, CSV) pairs of 'example data/'
 
 
 try:
@@ -106,26 +106,33 @@ class TestRecord(unittest.TestCase):
         self.assertIsNone(nsz.dls_record(d))
 
 
-@unittest.skipUnless(SAMPLE and HAS_SCIPY, "real sample or scipy not present")
+@unittest.skipUnless(SAMPLES and HAS_SCIPY, "real samples or scipy not present")
 class TestRealSample(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.d = nsz.load_nsz(SAMPLE)
-        cls.rec = nsz.dls_record(cls.d)
+    """Every sample pair of 'example data/' (a polystyrene latex and two liposome preparations, two software layouts)."""
+
+    def each(self):
+        for path, _ in SAMPLES:
+            with self.subTest(sample=os.path.basename(path)):
+                d = nsz.load_nsz(path)
+                yield d, nsz.dls_record(d)
 
     def test_record_uses_the_conditions_of_the_file(self):
-        self.assertEqual(self.rec['angle'], self.d['params']['Angle_deg'])
-        self.assertEqual(len(self.rec['tau']), 43)
+        for d, rec in self.each():
+            self.assertEqual(rec['angle'], d['params']['Angle_deg'])
+            self.assertEqual(len(rec['tau']), 43)
 
     def test_z_average_is_close_to_the_instrument(self):
-        r = nsz.dls_analyse(self.rec, nsz.DLS_MODELS[0], self.d['params']['Lambda_nm'])
-        self.assertAlmostEqual(r['z'] / self.d['params']['ZAvg_nm'], 1.0, delta=0.03)
+        # 1-2% for the narrow samples, 4% at most for the polydisperse liposomes and the 1:400 latex
+        for d, rec in self.each():
+            r = nsz.dls_analyse(rec, nsz.DLS_MODELS[0], d['params']['Lambda_nm'])
+            self.assertAlmostEqual(r['z'] / d['params']['ZAvg_nm'], 1.0, delta=0.05)
 
     def test_all_models_run(self):
-        for m in nsz.DLS_MODELS:
-            r = nsz.dls_analyse(self.rec, m, 532.0)
-            self.assertTrue(np.all(np.isfinite(r['p'])))
-            self.assertEqual(len(r['fit']), 43)
+        for d, rec in self.each():
+            for m in nsz.DLS_MODELS:
+                r = nsz.dls_analyse(rec, m, 532.0)
+                self.assertTrue(np.all(np.isfinite(r['p'])))
+                self.assertEqual(len(r['fit']), 43)
 
 
 LATEX_DIR = os.path.join(HERE, "..", "..", "LabSpectrumManager", "spettri di esempio", "20261119 DLS lattice e liposomi")
@@ -340,7 +347,7 @@ class TestDlsTab(unittest.TestCase):
 
     def test_runs_only_on_its_tab_and_compares_with_the_instrument(self):
         self.assertEqual(len(self.app.fig_dls.axes), 0)               # not computed while another tab is shown
-        self.app.notebook.select(self.app.tab_dls)
+        self.app.size_source.set("Recomputed"); self.app.notebook.select(self.app.tab_size)
         self.root.update()
         self.assertEqual(len(self.app.fig_dls.axes), 2)
         self.assertIs(self.app._current_figure(), self.app.fig_dls)
@@ -349,7 +356,7 @@ class TestDlsTab(unittest.TestCase):
         self.assertIn("Z-average", text)
 
     def test_weighting_changes_the_plot_and_the_text(self):
-        self.app.notebook.select(self.app.tab_dls)
+        self.app.size_source.set("Recomputed"); self.app.notebook.select(self.app.tab_size)
         self.app.dls_weight.set("Number")
         self.app._plot_dls()
         self.assertEqual(self.app.fig_dls.axes[1].get_title(), "Size distribution by number")
@@ -359,7 +366,7 @@ class TestDlsTab(unittest.TestCase):
         self.assertIn("instrument mean", self.app.dls_text.get("1.0", "end"))
 
     def test_mie_and_rayleigh_conversions_in_the_tab(self):
-        self.app.notebook.select(self.app.tab_dls)
+        self.app.size_source.set("Recomputed"); self.app.notebook.select(self.app.tab_size)
         self.app.dls_weight.set("Number")
         self.app.dls_conv.set("Mie")
         self.app.dls_vars['np'].set("1.59")
@@ -370,7 +377,7 @@ class TestDlsTab(unittest.TestCase):
         self.assertIn("Rayleigh", self.app.dls_text.get("1.0", "end"))
 
     def test_mie_shell_conversion_in_the_tab(self):
-        self.app.notebook.select(self.app.tab_dls)
+        self.app.size_source.set("Recomputed"); self.app.notebook.select(self.app.tab_size)
         self.app.dls_weight.set("Number")
         self.app.dls_conv.set("Mie shell")
         self.app.dls_vars['shell_t'].set("9")
@@ -380,8 +387,34 @@ class TestDlsTab(unittest.TestCase):
         self.app._plot_dls()
         self.assertIn("t 4.5 nm", self.app.dls_text.get("1.0", "end"))
 
+    def test_the_source_selector_swaps_the_two_plots(self):
+        app = self.app
+        app.notebook.select(app.tab_size)
+        self.assertEqual(app.box_inst.winfo_manager(), "pack")
+        self.assertEqual(app.box_rec.winfo_manager(), "")
+        self.assertIs(app._current_figure(), app.fig_size)
+        app.size_source.set("Recomputed")
+        app._on_source()
+        self.root.update()
+        self.assertEqual(app.box_rec.winfo_manager(), "pack")
+        self.assertEqual(app.box_inst.winfo_manager(), "")
+        self.assertIs(app._current_figure(), app.fig_dls)
+        self.assertEqual(len(app.notebook.tabs()), 3)                  # Autocorrelogram, Size distribution, Parameters
+
+    def test_instrument_distribution_by_volume_and_number(self):
+        app = self.app
+        app.notebook.select(app.tab_size)
+        for weight in ("Volume", "Number"):
+            for conv in ("Mie", "Mie shell", "Rayleigh"):
+                app.dls_weight.set(weight)
+                app.dls_conv.set(conv)
+                app._plot_size()
+                ax = app.fig_size.axes[0]
+                self.assertEqual(ax.get_ylabel(), weight + " (%)")
+                self.assertAlmostEqual(float(np.sum(ax.lines[0].get_ydata())), 100.0, delta=0.5)
+
     def test_models_and_invalid_settings(self):
-        self.app.notebook.select(self.app.tab_dls)
+        self.app.size_source.set("Recomputed"); self.app.notebook.select(self.app.tab_size)
         self.app.dls_model.set(nsz.DLS_MODELS[2])                      # also sets g1 min to 0.05
         self.assertEqual(self.app.dls_vars['gmin'].get(), '0.05')
         self.assertIn("Peak 2", self.app.dls_text.get("1.0", "end"))

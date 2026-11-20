@@ -12,8 +12,8 @@ exports everything to Excel.
 > against your own exports before relying on them, especially with other instrument models.
 
 ![Autocorrelogram tab](screenshot.png)
-![Distribution tab](screenshot_distribution.png)
-![DLS analysis tab](screenshot_dls.png)
+![Size distribution tab, source Instrument](screenshot_distribution.png)
+![Size distribution tab, source Recomputed](screenshot_dls.png)
 
 ## Features
 
@@ -22,15 +22,19 @@ exports everything to Excel.
 - Loads many samples and overlays the selected ones.
 - **Autocorrelogram** tab: measured correlation function, Horiba fit and residuals. The file stores the intensity
   correlation g₂−1 (the square of the g₁ that the instrument software exports), and that is what is plotted.
-- **Distribution** tab: size distribution by intensity or by number, log or linear x axis,
-  optional cumulative curve.
-- **DLS analysis** tab: the stored correlogram is analysed again in the program, and the result is shown next to the
-  instrument's values. Cumulants (Z-average and PI) from a quadratic fit of ln g₁; an intensity-weighted size distribution
-  either free (regularised non-negative least squares) or as one or two log-normal peaks with a free intercept of g₁
-  and a BIC that says whether the second peak is supported. Needs `scipy`.
-  The distribution can be shown by intensity, volume or number, converted with Mie theory (the light one particle scatters
-  at the measurement angle, with the refractive index of the particle stored in the file or typed) or with the Rayleigh
-  approximation (d⁶). The instrument's own values are shown only for intensity. See "Validation" for how far to trust it.
+- **Size distribution** tab, with two sources:
+  - *Instrument*: the distribution that the instrument software stored in the file, with its cumulative curve.
+  - *Recomputed*: the stored correlogram is analysed again in the program, and the result is shown next to the
+    instrument's values. Cumulants (Z-average and PI) from a quadratic fit of ln g₁; an intensity-weighted size
+    distribution either free (regularised non-negative least squares) or as one or two log-normal peaks with a free
+    intercept of g₁ and a BIC that says whether the second peak is supported. Needs `scipy`. See "Validation" for how far
+    to trust it.
+
+  Both sources can be shown by intensity, volume or number, on a log or linear axis. Volume and number are converted
+  from the intensity distribution with Mie theory (the light one particle scatters at the measurement angle; solid sphere
+  with the refractive index of the particle stored in the file or typed, or a vesicle as a shell around a core of medium
+  with a chosen thickness and index) or with the Rayleigh approximation (d⁶). The instrument's own mean, mode and S.D.
+  are shown only for intensity.
 - **Parameters** tab: date, solvent, scattering angle, wavelength, temperature, viscosity,
   refractive index, peak and mean sizes, SD, D10/D50/D90, mode, median, Z-average, PDI and span.
 - **Excel export**: one `.xlsx` per sample with sheets for the ACF (data, fit, residuals),

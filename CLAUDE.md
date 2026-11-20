@@ -28,8 +28,8 @@ without it. The three `screenshot*.png` are the real program with the 0843 file 
 ## Architecture
 
 Single file `DLSManager.pyw`: parser functions (`f32`, `parse_props`, `load_nsz` / `_read_nsz`, `dump_nsz` for
-debugging) and the class `DLSManager` (sidebar with sample list, a `ttk.Notebook` with Autocorrelogram / Distribution /
-Parameters tabs, two matplotlib `Figure`s `fig_acf` and `fig_size`). `self.samples = {path: data dict}`, `self.selected`
+debugging) and the class `DLSManager` (sidebar with sample list, a `ttk.Notebook` with Autocorrelogram /
+Size distribution / Parameters tabs, matplotlib `Figure`s `fig_acf`, `fig_size` and `fig_dls`). `self.samples = {path: data dict}`, `self.selected`
 = paths shown. `_plot_acf` / `_plot_size` redraw on every control change, `_update_params_table` fills the table (up to 5
 samples), `_write_xlsx` writes one workbook per sample, `_to_number_dist` converts intensity to number distribution
 (Rayleigh, N proportional to I/d^6).
@@ -56,7 +56,17 @@ lengths (16, 2, 2 instead of 17, 3, 4), so the diameter and intensity arrays wer
 first bin, the last bin 8510 nm dropped) and the cumulative curve was shifted by one bin against the diameters. The
 header lengths above reproduce all three CSV columns exactly (to the CSV rounding).
 
-## DLS analysis (tab `DLS analysis`, ported from LabSpectrumManager)
+## Size distribution tab (instrument result and DLS analysis, ported from LabSpectrumManager)
+
+One tab, `tab_size` ("Size distribution"; merged on 2026-11-20 from the former 'Distribution' and 'DLS analysis' tabs, which showed two
+intensity distributions and two different number conversions). Built by `_build_size_tab`: the shared row has `size_source`
+(`SIZE_SOURCES` = Instrument / Recomputed), `size_xscale`, `dls_weight` (intensity / volume / number) and the conversion
+(`dls_conv`, particle n, shell thickness and index); `box_inst` holds the cumulative checkbox and `fig_size` (the file's own
+84-bin distribution, `_plot_size`), `box_rec` the model controls, `fig_dls` and the text (`_plot_dls`). `_on_source` swaps the boxes,
+`_plot_dist` redraws the visible one (`_refresh_dls` plots the recomputed one only while the tab is shown), `_current_figure`
+returns `fig_size` or `fig_dls` by source. In the Instrument source volume/number use the same conversion as the Recomputed one (`dls_reweight`
+with the per-particle intensity on the file's diameters; Rayleigh if the file lacks angle/index); `_to_number_dist` remains for the Excel export.
+The Recomputed part, in detail:
 
 Module-level functions after the parser: `dls_q2`, `_dls_gamma`, `dls_cumulants` (quadratic fit of ln g1, g1 > 0.3), `dls_invert`
 (regularised NNLS, 10-3000 nm, alpha 1, g1 > 0.1), `dls_fit_peaks` (1 or 2 log-normal peaks, free intercept of g1, delays below
@@ -91,6 +101,12 @@ tab, 0 keeps everything) before volume/number; this is applied to the free model
 intensity (its number/volume tables were never located). Mie at 173 degrees oscillates with size (latex volume mode 252 nm
 against 142 in intensity), and liposomes are shells, not solid spheres: numbers for them are indicative. Controls are on two rows
 (they did not fit the window on one). Not compared: any instrument volume/number output.
+
+The 'lipo 450 nm' samples (files `0826`-`0828`) are liposomes made by hydration and extruded three times through a 450 nm filter
+(the one used for sterilisation), most probably multilamellar: Z-average about 300 nm (PI 0.38) while the mean of the distribution is
+near the nominal 450 nm (ours 453, the instrument's 413). The Z-average of a broad distribution is the intensity-weighted harmonic mean and
+sits low, so the two are not in conflict. For these the Mie shell thickness of 4.5 nm (one bilayer) does not apply: LabSpectrumManager estimated
+about 7 lamellae for the same kind of sample.
 
 Verified on 15 polystyrene latex measurements (the `20261119 DLS lattice e liposomi` folder of LabSpectrumManager, 130 nm by TEM;
 `tests/test_dls.py::TestLatex` uses the three at 173 degrees and skips without them): Z-average -4.0..+0.3% of the instrument's
