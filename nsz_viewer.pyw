@@ -319,6 +319,158 @@ def _read_nsz(path, ole):
         'params':     params,
     }
 
+# ── DLS analysis of the stored correlogram ────────────────────────────────────
+# Ported from LabSpectrumManager, where it was checked on four SZ-100 files (532 nm, 43 delays from 1e-7 to 0.109 s):
+# the Z-average of the cumulants is within 1-2% of the instrument's; the two-peak split is an ill-posed inversion,
+# not stable between replicates, and only meaningful for sizes that differ by about 3 times or more.
+
+_KB = 1.380649e-23
+DLS_MODELS = ("Regularised (free distribution)", "1 peak (log-normal)", "2 peaks (log-normal)")
+DLS_TIPS = {
+    'model': "Regularised: a free size distribution (non-negative, smoothed), the least assumptions but a limited "
+             "resolution. 1 or 2 peaks: the intensity distribution is one or two log-normal peaks fitted to the "
+             "correlogram (diameter of each peak, its width and its share of the scattered intensity). Two peaks are "
+             "only meaningful if the sizes differ by a factor of about 3 or more and the fit is clearly better than "
+             "with one.",
+    'wl': "Laser wavelength, nm (532 for the SZ-100; the sizes depend on it through the scattering vector).",
+    'alpha': "Smoothing strength of the regularised inversion (second-difference penalty): larger = smoother and wider "
+             "peaks, smaller = more detail and more spurious peaks. Only used by the regularised model.",
+    'gmin': "Only the points of the correlogram with g1 = sqrt(ACF) above this value are used: the tail is mostly "
+            "noise. 0.1 for the regularised model, 0.05 for the peaks.",
+}
+
+
+def dls_q2(angle_deg, n_solvent, wavelength_nm=532.0):
+    """Squared scattering vector in 1/m^2: q = 4 pi n sin(theta/2) / lambda."""
+    q = 4 * np.pi * n_solvent * np.sin(np.radians(angle_deg) / 2) / (wavelength_nm * 1e-9)
+    return q * q
+
+
+def _dls_gamma(d_nm, q2, temp_c, visc_mpas):
+    """Decay rate (1/s) of the field correlation of spheres of diameter d_nm: Gamma = D q^2, D = kT / (3 pi eta d)."""
+    return _KB * (temp_c + 273.15) / (3 * np.pi * visc_mpas * 1e-3 * np.asarray(d_nm, float) * 1e-9) * q2
+
+
+def dls_cumulants(tau, acf, q2, temp_c, visc_mpas, gmin=0.30):
+    """Z-average (nm) and polydispersity index from a quadratic fit of ln g1 (g1 = sqrt of the normalised ACF) over the
+    points with g1 > gmin: ln g1 = -G t + (mu2/2) t^2, Z from G, PI = mu2 / G^2. `tau` in seconds. Returns None when
+    there are too few points."""
+    tau, acf = np.asarray(tau, float), np.asarray(acf, float)
+    g1 = np.sqrt(np.clip(acf, 0, None))
+    sel = g1 > gmin
+    if sel.sum() < 4:
+        return None
+    ts = 1e-4
+    c = np.polyfit(tau[sel] / ts, np.log(g1[sel]), 2)
+    G, mu2 = -c[1] / ts, 2 * c[0] / ts ** 2
+    if G <= 0:
+        return None
+    return float(_KB * (temp_c + 273.15) / (3 * np.pi * visc_mpas * 1e-3 * (G / q2)) * 1e9), float(mu2 / G ** 2)
+
+
+def dls_invert(tau, acf, q2, temp_c, visc_mpas, alpha=1.0, gmin=0.1, dmin=10.0, dmax=3000.0, ngrid=100, tau_min=1e-6):
+    """Intensity-weighted size distribution by regularised non-negative least squares: g1 = sum_j p_j exp(-Gamma_j t)
+    with p >= 0 on a log grid of diameters, weighted by g1 and a second-difference smoothing penalty alpha. Returns
+    (diameters nm, p normalised to sum 1, fitted g1 at all delays). Needs scipy (nnls)."""
+    from scipy.optimize import nnls
+    tau, acf = np.asarray(tau, float), np.asarray(acf, float)
+    g1 = np.sqrt(np.clip(acf, 0, None))
+    d = np.geomspace(dmin, dmax, ngrid)
+    gam = _dls_gamma(d, q2, temp_c, visc_mpas)
+    sel = (g1 > gmin) & (tau >= tau_min)
+    K = np.exp(-np.outer(tau[sel], gam))
+    w = g1[sel]
+    L = np.diff(np.eye(ngrid), 2, axis=0)
+    p, _ = nnls(np.vstack([K * w[:, None], alpha * L]), np.concatenate([g1[sel] * w, np.zeros(ngrid - 2)]))
+    p = p / p.sum()
+    return d, p, np.exp(-np.outer(tau, gam)) @ p
+
+
+def dls_fit_peaks(tau, acf, q2, temp_c, visc_mpas, n_peaks=2, gmin=0.05, dmin=10.0, dmax=1e4, ngrid=160,
+                  tau_min=1e-6):
+    """Intensity distribution as n_peaks log-normal peaks (median diameter, width in ln d, share of the intensity),
+    fitted to g1 by least squares from several starting points (the intercept of g1 is a free parameter). Returns
+    (diameters, p, fitted g1, peaks, rms of g1, BIC) where peaks is a list of dicts {'median', 'sigma', 'fraction'} sorted
+    by size and BIC = N ln(rss/N) + k ln N is the Bayesian information criterion (a model with the lower BIC is
+    preferred; a difference below about 6 is not significant). Needs scipy (least_squares).
+    Delays shorter than tau_min (1 us) are left out: the first channels of the stored correlogram drop by about 1% in
+    one step (the first point is the normalisation), which a fit reads as a 3-5% 'peak' at 3-16 nm on every file."""
+    from scipy.optimize import least_squares
+    tau, acf = np.asarray(tau, float), np.asarray(acf, float)
+    g1 = np.sqrt(np.clip(acf, 0, None))
+    d = np.geomspace(dmin, dmax, ngrid)
+    lnd = np.log(d)
+    gam = _dls_gamma(d, q2, temp_c, visc_mpas)
+    sel = (g1 > gmin) & (tau >= tau_min)
+    K = np.exp(-np.outer(tau[sel], gam))
+    w, y = g1[sel], g1[sel]
+    n = n_peaks
+
+    def unpack(x):
+        mus, sig, logit = x[:n], x[n:2 * n], x[2 * n:3 * n]
+        a = np.exp(logit - logit.max())
+        a /= a.sum()
+        p = np.zeros(ngrid)
+        for k in range(n):
+            g = np.exp(-0.5 * ((lnd - mus[k]) / sig[k]) ** 2)
+            p += a[k] * g / g.sum()
+        return p, a, mus, sig
+
+    def resid(x):
+        return w * (x[3 * n] * (K @ unpack(x)[0]) - y)         # x[3n] = intercept of g1 (the stored ACF starts near 0.99)
+
+    cum = dls_cumulants(tau, acf, q2, temp_c, visc_mpas)
+    z0 = cum[0] if cum else 100.0
+    starts = [[np.log(z0)]] if n == 1 else [[np.log(z0 / f1), np.log(z0 * f2)] for f1, f2 in ((1.3, 3), (1.6, 6), (2, 4))]
+    lo = np.r_[[np.log(dmin) + 0.5] * n, [0.05] * n, [-8.0] * n, 0.5]
+    hi = np.r_[[np.log(dmax) - 0.5] * n, [1.2] * n, [8.0] * n, 1.5]
+    best = None
+    for mu0 in starts:
+        x0 = np.r_[mu0, [0.15] * n, [0.0] * n, 1.0]
+        res = least_squares(resid, np.clip(x0, lo + 1e-9, hi - 1e-9), bounds=(lo, hi))
+        if best is None or res.cost < best.cost:
+            best = res
+    p, a, mus, sig = unpack(best.x)
+    order = np.argsort(mus)
+    peaks = [{'median': float(np.exp(mus[k])), 'sigma': float(sig[k]), 'fraction': float(a[k])} for k in order]
+    rss, npts, k = float(np.sum(resid(best.x) ** 2)), int(sel.sum()), 3 * n
+    bic = npts * np.log(max(rss, 1e-30) / npts) + k * np.log(npts)         # lower is better; compare 1 with 2 peaks
+    return (d, p, best.x[3 * n] * (np.exp(-np.outer(tau, gam)) @ p), peaks, float(np.sqrt(rss / npts)), float(bic))
+
+
+def dls_analyse(rec, model=DLS_MODELS[0], wavelength=532.0, alpha=1.0, gmin=None):
+    """Z-average, PI and the intensity distribution of a stored correlogram `rec` ({'tau' in seconds, 'acf', 'angle',
+    'n', 'visc', 'T'}) with the chosen model of DLS_MODELS. Returns a dict with z, pi (cumulants, may be None), d, p,
+    fit, peaks (None for the regularised model), mean, mode, sd of the distribution."""
+    q2 = dls_q2(rec['angle'], rec['n'], wavelength)
+    args = (rec['tau'], rec['acf'], q2, rec['T'], rec['visc'])
+    cum = dls_cumulants(*args)
+    out = {'z': cum[0] if cum else None, 'pi': cum[1] if cum else None, 'peaks': None}
+    if model == DLS_MODELS[0]:
+        out['d'], out['p'], out['fit'] = dls_invert(*args, alpha=alpha, gmin=0.1 if gmin is None else gmin)
+    else:
+        n = 1 if model == DLS_MODELS[1] else 2
+        out['d'], out['p'], out['fit'], out['peaks'], out['rms'], out['bic'] = dls_fit_peaks(
+            *args, n_peaks=n, gmin=0.05 if gmin is None else gmin)
+    d, p = out['d'], out['p']
+    mean = float(np.sum(d * p) / np.sum(p))
+    out['mode'], out['mean'] = float(d[np.argmax(p)]), mean
+    out['sd'] = float(np.sqrt(np.sum(p * (d - mean) ** 2) / np.sum(p)))
+    return out
+
+
+def dls_record(d):
+    """The input of dls_analyse() for a sample dict of load_nsz(): delays in seconds and the measurement conditions
+    (angle, solvent index, viscosity, temperature) read from the file. None if the file lacks any of them or the delays
+    are not matched to the channels."""
+    p = d['params']
+    keys = ('Angle_deg', 'n_solvent', 'Visc_mPas', 'Temp_C')
+    if not d.get('tau_aligned') or any(p.get(k) is None for k in keys) or len(d['tau']) < 8:
+        return None
+    return {'tau': d['tau'] * 1e-6, 'acf': d['acf'], 'angle': p['Angle_deg'], 'n': p['n_solvent'],
+            'visc': p['Visc_mPas'], 'T': p['Temp_C']}
+
+
 # ── Main application ──────────────────────────────────────────────────────────
 
 class NSZViewer:
