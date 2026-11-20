@@ -127,5 +127,56 @@ class TestRealSample(unittest.TestCase):
             self.assertEqual(len(r['fit']), 43)
 
 
+@unittest.skipUnless(HAS_SCIPY, "scipy not installed")
+class TestDlsTab(unittest.TestCase):
+    """The tab of the application, on a synthetic sample shaped like load_nsz() output (needs a screen)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tkinter as tk
+        try:
+            cls.root = nsz.TkinterDnD.Tk() if nsz.DND_AVAILABLE else tk.Tk()
+        except tk.TclError as e:
+            raise unittest.SkipTest("Tk not available: %s" % e)
+        cls.root.withdraw()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.root.destroy()
+
+    def setUp(self):
+        self.app = nsz.NSZViewer(self.root)
+        acf = correlogram([100.0], [1.0])
+        d = {'path': 's.nsz', 'name': 's', 'tau': TAU * 1e6, 'acf': acf, 'tau_aligned': True,
+             'fit': acf[6:], 'resid': acf[6:] * 0, 'fit_offset': 6, 'sz': np.logspace(0, 3, 84),
+             'intens': np.ones(84), 'cumul': np.cumsum(np.ones(84)),
+             'params': {'Sample_Name': 's', 'Angle_deg': 173.0, 'n_solvent': 1.333, 'Visc_mPas': 0.8963,
+                        'Temp_C': 25.0, 'ZAvg_nm': 100.0, 'PDI': 0.01, 'Mean1_nm': 100.0, 'Mode_nm': 100.0}}
+        self.app.samples['s.nsz'] = d
+        self.app.listbox.insert('end', 's.nsz')
+        self.app.listbox.selection_set(0)
+        self.app._on_select()
+
+    def test_runs_only_on_its_tab_and_compares_with_the_instrument(self):
+        self.assertEqual(len(self.app.fig_dls.axes), 0)               # not computed while another tab is shown
+        self.app.notebook.select(self.app.tab_dls)
+        self.root.update()
+        self.assertEqual(len(self.app.fig_dls.axes), 2)
+        self.assertIs(self.app._current_figure(), self.app.fig_dls)
+        text = self.app.dls_text.get("1.0", "end")
+        self.assertIn("instrument", text)
+        self.assertIn("Z-average", text)
+
+    def test_models_and_invalid_settings(self):
+        self.app.notebook.select(self.app.tab_dls)
+        self.app.dls_model.set(nsz.DLS_MODELS[2])                      # also sets g1 min to 0.05
+        self.assertEqual(self.app.dls_vars['gmin'].get(), '0.05')
+        self.assertIn("Peak 2", self.app.dls_text.get("1.0", "end"))
+        self.assertIn("BIC", self.app.dls_text.get("1.0", "end"))
+        self.app.dls_vars['wl'].set('abc')
+        self.app._plot_dls()
+        self.assertIn("Invalid settings", self.app.dls_text.get("1.0", "end"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -319,6 +319,41 @@ def _read_nsz(path, ole):
         'params':     params,
     }
 
+class ToolTip:
+    """Small yellow help box shown after the pointer rests on a widget for `delay` ms; hidden on leave or click."""
+
+    def __init__(self, widget, text, delay=500, wraplength=340):
+        self.widget, self.text, self.delay, self.wraplength = widget, text, delay, wraplength
+        self._after, self._tip = None, None
+        widget.bind('<Enter>', self._schedule, add='+')
+        widget.bind('<Leave>', self._hide, add='+')
+        widget.bind('<ButtonPress>', self._hide, add='+')
+
+    def _schedule(self, _event=None):
+        self._hide()
+        self._after = self.widget.after(self.delay, self._show)
+
+    def _show(self):
+        self._after = None
+        if self._tip is not None or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 12
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self._tip = tk.Toplevel(self.widget)
+        self._tip.wm_overrideredirect(True)
+        self._tip.wm_geometry(f"+{x}+{y}")
+        tk.Label(self._tip, text=self.text, justify=tk.LEFT, bg='#ffffe0', relief=tk.SOLID, borderwidth=1,
+                 font=('Arial', 8), wraplength=self.wraplength).pack()
+
+    def _hide(self, _event=None):
+        if self._after is not None:
+            self.widget.after_cancel(self._after)
+            self._after = None
+        if self._tip is not None:
+            self._tip.destroy()
+            self._tip = None
+
+
 # ── DLS analysis of the stored correlogram ────────────────────────────────────
 # Ported from LabSpectrumManager, where it was checked on four SZ-100 files (532 nm, 43 delays from 1e-7 to 0.109 s):
 # the Z-average of the cumulants is within 1-2% of the instrument's; the two-peak split is an ill-posed inversion,
@@ -484,6 +519,7 @@ class NSZViewer:
 
         self.samples = {}   # path → data dict
         self.selected = []  # list of paths currently shown
+        self._dls_cache = {}   # (path, model, wavelength, alpha, g1 min) -> dls_analyse() result
 
         self._build_menu()
         self._build_ui()
@@ -592,9 +628,16 @@ class NSZViewer:
         self.tab_params = tk.Frame(self.notebook, bg="white")
         self.notebook.add(self.tab_params, text="  Parameters  ")
 
+        # Tab 4: DLS analysis of the stored correlogram
+        self.tab_dls = tk.Frame(self.notebook, bg="white")
+        self.notebook.add(self.tab_dls, text="  DLS analysis  ")
+
         self._build_acf_tab()
         self._build_size_tab()
         self._build_params_tab()
+        self._build_dls_tab()
+        # the inversions take a moment: they run only while their tab is shown
+        self.notebook.bind("<<NotebookTabChanged>>", lambda e: self._refresh_dls())
 
     def _build_acf_tab(self):
         ctrl = tk.Frame(self.tab_acf, bg="white", pady=4)
@@ -686,6 +729,38 @@ class NSZViewer:
         self.tree.tag_configure("odd",  background="#F8FAFC")
         self.tree.tag_configure("even", background="white")
 
+    def _build_dls_tab(self):
+        ctrl = tk.Frame(self.tab_dls, bg="white", pady=4)
+        ctrl.pack(fill=tk.X, padx=14)
+        self._tips = []
+        tk.Label(ctrl, text="Model:", bg="white", font=("Helvetica", 9)).pack(side=tk.LEFT)
+        self.dls_model = tk.StringVar(value=DLS_MODELS[0])
+        cmb = ttk.Combobox(ctrl, textvariable=self.dls_model, values=DLS_MODELS, state="readonly", width=30)
+        cmb.pack(side=tk.LEFT, padx=(4, 0))
+        self._tips.append(ToolTip(cmb, DLS_TIPS['model']))
+        self.dls_vars = {}
+        for text, key, val in (("Wavelength (nm)", 'wl', '532'), ("Smoothing α", 'alpha', '1.0'),
+                               ("g1 min", 'gmin', '0.1')):
+            lab = tk.Label(ctrl, text=text, bg="white", font=("Helvetica", 9))
+            lab.pack(side=tk.LEFT, padx=(12, 2))
+            self.dls_vars[key] = tk.StringVar(value=val)
+            ent = tk.Entry(ctrl, textvariable=self.dls_vars[key], width=6)
+            ent.pack(side=tk.LEFT)
+            ent.bind("<Return>", lambda e: self._plot_dls())
+            self._tips.extend(ToolTip(w, DLS_TIPS[key]) for w in (lab, ent))
+        # the usual g1 cut-off depends on the model (0.1 regularised, 0.05 peaks)
+        self.dls_model.trace_add("write", self._on_dls_model)
+        btn = tk.Button(ctrl, text="Compute", command=self._plot_dls, bg="#FEF9C3", font=("Helvetica", 9))
+        btn.pack(side=tk.LEFT, padx=12)
+
+        self.dls_text = tk.Text(self.tab_dls, height=9, font=("Consolas", 9), bg="#F8FAFC", relief=tk.FLAT,
+                                wrap=tk.WORD, state=tk.DISABLED)
+        self.dls_text.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=(0, 6))
+        self.fig_dls = Figure(figsize=(9, 4.5), dpi=100, facecolor="white")
+        self.canvas_dls = FigureCanvasTkAgg(self.fig_dls, self.tab_dls)
+        NavigationToolbar2Tk(self.canvas_dls, self.tab_dls).pack(side=tk.BOTTOM, fill=tk.X)
+        self.canvas_dls.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
+
     # ── Drag & Drop ───────────────────────────────────────────────────────────
 
     def _setup_dnd(self):
@@ -774,6 +849,12 @@ class NSZViewer:
         self._plot_acf()
         self._plot_size()
         self._update_params_table()
+        self._refresh_dls()
+
+    def _refresh_dls(self):
+        """Redraw the DLS tab, but only while it is the visible one."""
+        if self.notebook.select() == str(self.tab_dls):
+            self._plot_dls()
 
     # ── Plot style (PlotStyleKit) ─────────────────────────────────────────────
 
@@ -971,6 +1052,115 @@ class NSZViewer:
 
         self._style_figure(self.fig_size)
         self.canvas_size.draw()
+
+    # ── DLS analysis ──────────────────────────────────────────────────────────
+
+    def _on_dls_model(self, *_):
+        self.dls_vars['gmin'].set('0.1' if self.dls_model.get() == DLS_MODELS[0] else '0.05')
+        self._plot_dls()
+
+    def _dls_result(self, path, model, wl, alpha, gmin):
+        key = (path, model, wl, alpha, gmin)
+        if key not in self._dls_cache:
+            self._dls_cache[key] = dls_analyse(dls_record(self.samples[path]), model, wl, alpha, gmin)
+        return self._dls_cache[key]
+
+    def _set_dls_text(self, lines):
+        self.dls_text.config(state=tk.NORMAL)
+        self.dls_text.delete("1.0", tk.END)
+        self.dls_text.insert(tk.END, "\n".join(lines))
+        self.dls_text.config(state=tk.DISABLED)
+
+    def _plot_dls(self):
+        """Cumulants and intensity-weighted size distribution of the selected samples from their correlograms, with
+        the instrument's own values next to them."""
+        self.fig_dls.clear()
+        ax1 = self.fig_dls.add_subplot(121)
+        ax2 = self.fig_dls.add_subplot(122)
+        lines = []
+        try:
+            wl, alpha, gmin = (float(self.dls_vars[k].get()) for k in ('wl', 'alpha', 'gmin'))
+            if wl <= 0 or alpha < 0 or not 0 < gmin < 1:
+                raise ValueError
+        except ValueError:
+            wl = None
+            lines.append("Invalid settings: wavelength > 0, smoothing >= 0 and 0 < g1 min < 1 are required.")
+        try:
+            import scipy.optimize  # noqa: F401  (nnls and least_squares)
+        except ImportError:
+            wl = None
+            lines.append("The inversion needs scipy (pip install scipy).")
+        model = self.dls_model.get()
+        palette = sample_colors()
+        if wl is not None and self.selected:
+            self.root.config(cursor="watch")
+            self.root.update_idletasks()
+        try:
+            for idx, path in enumerate(self.selected[:MAX_SAMPLES_SHOWN] if wl is not None else []):
+                d = self.samples[path]
+                c = palette[idx % len(palette)]
+                name = self._short_label(d['name'])
+                rec = dls_record(d)
+                if rec is None:
+                    lines.append(f"{name}: the file has no correlogram or measurement conditions to analyse.")
+                    continue
+                try:
+                    r = self._dls_result(path, model, wl, alpha, gmin)
+                except Exception as e:
+                    lines.append(f"{name}: inversion failed ({e}).")
+                    continue
+                ax1.semilogx(rec['tau'] * 1e6, np.sqrt(np.clip(rec['acf'], 0, None)), 'o', ms=3, color=c, label=name)
+                ax1.semilogx(rec['tau'] * 1e6, r['fit'], '-', lw=1.3, color=c)
+                ax2.semilogx(r['d'], r['p'] / r['p'].max(), '-', lw=1.6, color=c, label=name)
+                if r['z'] is not None:
+                    ax2.axvline(r['z'], color=c, ls=':', lw=1)
+                lines.extend(self._dls_summary(path, name, r, model, wl, alpha, gmin))
+        finally:
+            self.root.config(cursor="")
+        ax1.set_xlabel("Delay time τ (µs)")
+        ax1.set_ylabel("$g_1$ = √ACF")
+        ax1.set_title("Correlogram and fit", fontweight='bold')
+        ax2.set_xlabel("Diameter (nm)")
+        ax2.set_ylabel("Intensity-weighted (normalised)")
+        ax2.set_title("Size distribution by intensity", fontweight='bold')
+        if self.selected and ax1.get_legend_handles_labels()[0]:
+            ax1.legend(fontsize=8, loc='upper right', framealpha=0.9)
+        if not self.selected:
+            ax1.text(0.5, 0.5, "No sample selected\n\nLoad .nsz files and select them in the list",
+                     ha='center', va='center', transform=ax1.transAxes, fontsize=12, color='#94A3B8')
+        self._set_dls_text(lines)
+        self._style_figure(self.fig_dls)
+        self.canvas_dls.draw()
+
+    def _dls_summary(self, path, name, r, model, wl, alpha, gmin):
+        """Text lines for one sample: cumulants and distribution, each with the instrument's value."""
+        p = self.samples[path]['params']
+
+        def inst(key, fmt):
+            return fmt.format(p[key]) if p.get(key) is not None else "n/a"
+
+        out = [f"{name}"]
+        if r['z'] is not None:
+            diff = f" ({100 * (r['z'] / p['ZAvg_nm'] - 1):+.1f}%)" if p.get('ZAvg_nm') else ""
+            out.append(f"  Z-average {r['z']:.1f} nm, PI {r['pi']:.3f} (cumulants, g1 > 0.3)  |  instrument "
+                       f"{inst('ZAvg_nm', '{:.1f}')} nm, PI {inst('PDI', '{:.3f}')}{diff}")
+        if r['peaks'] is None:
+            out.append(f"  Regularised distribution (α = {alpha:g}): mean {r['mean']:.0f} nm, mode {r['mode']:.0f} nm, "
+                       f"S.D. {r['sd']:.0f} nm  |  instrument mean {inst('Mean1_nm', '{:.0f}')}, "
+                       f"mode {inst('Mode_nm', '{:.0f}')}, S.D. {inst('SD1_nm', '{:.0f}')} nm")
+        else:
+            for i, pk in enumerate(r['peaks'], 1):
+                out.append(f"  Peak {i}: median {pk['median']:.0f} nm, σ(ln d) {pk['sigma']:.2f}, "
+                           f"{100 * pk['fraction']:.0f}% of the scattered intensity")
+            out.append(f"  rms of g1 {r['rms']:.4f}, BIC {r['bic']:.1f} (lower is better)  |  instrument mean "
+                       f"{inst('Mean1_nm', '{:.0f}')}, mode {inst('Mode_nm', '{:.0f}')} nm")
+            if len(r['peaks']) == 2:
+                r1 = self._dls_result(path, DLS_MODELS[1], wl, alpha, gmin)
+                verdict = ('two peaks are supported' if r['bic'] < r1['bic'] - 6 else
+                           'one peak is enough' if r['bic'] > r1['bic'] + 6 else 'not significant')
+                out.append(f"  One peak: rms {r1['rms']:.4f}, BIC {r1['bic']:.1f}; difference "
+                           f"{r1['bic'] - r['bic']:+.1f}: {verdict}")
+        return out
 
     # ── Parameters table ──────────────────────────────────────────────────────
 
@@ -1199,6 +1389,8 @@ class NSZViewer:
             return self.fig_acf
         if tab == str(self.tab_size):
             return self.fig_size
+        if tab == str(self.tab_dls):
+            return self.fig_dls
         return None
 
     @staticmethod
@@ -1216,7 +1408,7 @@ class NSZViewer:
     def _figure_or_warn(self, title):
         fig = self._current_figure()
         if fig is None:
-            messagebox.showwarning(title, "Select samples and open the Autocorrelogram or Distribution tab.")
+            messagebox.showwarning(title, "Select samples and open the Autocorrelogram, Distribution or DLS analysis tab.")
         return fig
 
     def save_figure_image(self):
