@@ -1573,7 +1573,7 @@ class DLSManager:
                     ha='center', va='center', transform=ax.transAxes,
                     fontsize=12, color='#94A3B8')
 
-        self._rayleigh_warning(ray_items, weight, self.dls_conv.get())
+        self._show_warnings([self._volnum_warning(weight), self._rayleigh_warning(ray_items, weight, self.dls_conv.get())])
         self._style_figure(self.fig_size)
         self.cur_size.attach()
         self.canvas_size.draw()
@@ -1605,6 +1605,7 @@ class DLSManager:
         ax2 = self.fig_dls.add_subplot(122)
         lines = []
         ray_items = []
+        peak_warn = []
         try:
             wl, alpha, gmin = (float(self.dls_vars[k].get()) for k in ('wl', 'alpha', 'gmin'))
             if wl <= 0 or alpha < 0 or not 0 < gmin < 1:
@@ -1652,6 +1653,7 @@ class DLSManager:
                 pw = self._weighted(r, weight, i1)
                 ax2.plot(r['d'], pw / pw.max(), '-', lw=1.6, color=c, label=name)
                 ray_items.append((name, r['d'], r['p'], rec, wl, self._particle_index(d)))
+                peak_warn += self._peak_warnings(path, name, r, wl, alpha, gmin)
                 if r['z'] is not None:
                     ax2.axvline(r['z'], color=c, ls=':', lw=1)
                 lines.extend(self._dls_summary(path, name, r, model, wl, alpha, gmin, weight, i1, conv))
@@ -1672,7 +1674,7 @@ class DLSManager:
         if not self.selected:
             ax1.text(0.5, 0.5, "No sample selected\n\nLoad .nsz files and select them in the list",
                      ha='center', va='center', transform=ax1.transAxes, fontsize=12, color='#94A3B8')
-        self._rayleigh_warning(ray_items, weight, conv)
+        self._show_warnings([self._volnum_warning(weight), self._rayleigh_warning(ray_items, weight, conv)] + peak_warn)
         self._set_dls_text(lines)
         self._style_figure(self.fig_dls)
         self.cur_dls.attach()
@@ -1708,7 +1710,35 @@ class DLSManager:
             if worst:
                 text = ("Warning: Rayleigh is more than 10%% off above %.0f nm and %.0f%% of the intensity of %s is larger: "
                         "volume and number are not reliable, use Mie." % (worst[1], 100 * worst[0], worst[2]))
-        self.ray_warn.config(text=text)
+        return text
+
+    @staticmethod
+    def _volnum_warning(weight):
+        """Always-visible caution for volume and number."""
+        if weight == DLS_WEIGHTS[0]:
+            return ""
+        return ("Caution: %s is not measured. It is the intensity distribution divided by the light one particle scatters, "
+                "which amplifies its small-size side and its width, so the values are only indicative; trust the "
+                "intensity distribution and the Z-average." % weight.lower())
+
+    def _peak_warnings(self, path, name, r, wl, alpha, gmin):
+        """Cautions about the log-normal fits of a recomputed sample: a peak at the width limit of the fit, a second peak
+        that the BIC does not support, two peaks closer than a factor 3 (the split is ill-posed)."""
+        out = []
+        if r['peaks'] is None:
+            return out
+        if any(pk['sigma'] >= 1.15 for pk in r['peaks']):
+            out.append("%s: a peak reaches the width limit of the fit (sigma 1.2): it is a tail, not a population." % name)
+        if len(r['peaks']) == 2:
+            r1 = self._dls_result(path, DLS_MODELS[1], wl, alpha, gmin)
+            if r['bic'] > r1['bic'] - 6:
+                out.append("%s: the second peak is not supported (BIC): one peak describes the data as well." % name)
+            elif r['peaks'][1]['median'] < 3 * r['peaks'][0]['median']:
+                out.append("%s: the two peaks are closer than a factor 3: the split is not stable between replicates." % name)
+        return out
+
+    def _show_warnings(self, parts):
+        self.ray_warn.config(text="\n".join(x for x in parts if x))
 
     def _tail_fraction(self):
         try:

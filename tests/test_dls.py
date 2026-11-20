@@ -420,18 +420,32 @@ class TestDlsTab(unittest.TestCase):
         app.dls_conv.set("Rayleigh")
         app._plot_size()
         self.assertIn("Rayleigh is more than 10% off above", app.ray_warn.cget("text"))
-        app.dls_conv.set("Mie")                                        # no warning with Mie, nor for intensity
+        app.dls_conv.set("Mie")                                        # Mie: the general caution only
         app._plot_size()
-        self.assertEqual(app.ray_warn.cget("text"), "")
+        self.assertNotIn("Rayleigh", app.ray_warn.cget("text"))
+        self.assertIn("is not measured", app.ray_warn.cget("text"))
         app.dls_conv.set("Rayleigh")
-        app.dls_weight.set("Intensity")
+        app.dls_weight.set("Intensity")                                # intensity needs no caution at all
         app._plot_size()
         self.assertEqual(app.ray_warn.cget("text"), "")
         sample['intens'] = 100.0 * small / small.sum()                 # small particles: Rayleigh is fine
         app.dls_weight.set("Number")
         app._plot_size()
-        self.assertEqual(app.ray_warn.cget("text"), "")
+        self.assertNotIn("Rayleigh is more", app.ray_warn.cget("text"))
+        self.assertIn("is not measured", app.ray_warn.cget("text"))
         self.assertGreater(app._rayleigh_limit(nsz.dls_record(sample), 532.0, 1.6), 40.0)
+
+    def test_peak_fits_warn_when_they_are_not_credible(self):
+        app = self.app
+        app.size_source.set("Recomputed"); app.notebook.select(app.tab_size)
+        app.dls_model.set(nsz.DLS_MODELS[2])                           # 2 peaks on a single-size sample
+        app._plot_dls()
+        text = app.ray_warn.cget("text")
+        self.assertIn("second peak is not supported", text)
+        app.dls_model.set(nsz.DLS_MODELS[0])                           # free model, intensity: nothing to warn about
+        app.dls_weight.set("Intensity")
+        app._plot_dls()
+        self.assertEqual(app.ray_warn.cget("text"), "")
 
     def test_the_source_selector_swaps_the_two_plots(self):
         app = self.app
