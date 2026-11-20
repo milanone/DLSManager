@@ -292,6 +292,7 @@ def _read_nsz(path, ole):
         'Temp_C':   pv(p34, 'MeasHolderTemp'),
         'Visc_mPas':pv(p34, 'MeasSolventVisco'),
         'n_solvent': pv(p34, 'MeasSolventRef'),
+        'n_particle': pv(p34, 'MeasSampleRef'),   # index entered in the instrument software (1.6 default)
         # CalcMean/SD/Mode/PeakPos/D10/D50/D90 are stored as RADII → ×2
         # PDI: CalcTotalPI is wrong, use Cum_fPi
         'Peak1_nm': pv(p1, 'CalcPeakPos[0]', 2.0),
@@ -384,6 +385,13 @@ DLS_TIPS = {
               "wavelength in the medium (400 nm); above about 100 nm the instrument uses Mie theory with the particle "
               "refractive index, so its volume and number values differ. The shift is large for broad or "
               "multi-peak distributions: a small tail in intensity can be most of the particles.",
+    'conv': "How volume and number are obtained from the intensity distribution. Mie: the light one particle scatters "
+            "at the measurement angle, from Mie theory with the refractive index of the particle (the one stored "
+            "in the file by the instrument software, 1.6 by default, or the value typed here; leave empty for the "
+            "file's). Rayleigh: scattered intensity ~ d^6, valid only well below 100 nm.",
+    'tail': "Free (regularised) distribution only, for volume and number: bins below this percentage of the maximum "
+            "are dropped before the conversion. The inversion leaves a few percent of intensity at the edge of the "
+            "size grid, which the conversion would turn into most of the particles. 0 keeps everything.",
     'gmin': "Only the points of the correlogram with g1 = sqrt(ACF) above this value are used: the tail is mostly "
             "noise. 0.1 for the regularised model, 0.05 for the peaks.",
 }
@@ -509,33 +517,112 @@ def dls_analyse(rec, model=DLS_MODELS[0], wavelength=532.0, alpha=1.0, gmin=None
 
 
 DLS_WEIGHTS = ("Intensity", "Volume", "Number")
+DLS_CONVERSIONS = ("Mie", "Rayleigh")
 _DLS_POWER = {"Intensity": 0, "Volume": 3, "Number": 6}   # Rayleigh: I ~ N d^6, so volume ~ I / d^3 and number ~ I / d^6
 
 
-def dls_reweight(d, p, kind):
+def mie_intensity(d_nm, wavelength_nm, n_medium, n_particle, angle_deg):
+    """Light scattered at `angle_deg` by one homogeneous non-absorbing sphere of each diameter in `d_nm`, perpendicular
+    to the scattering plane (|S1|^2, vertically polarised laser, detector in the horizontal plane), in arbitrary units
+    that are the same for every diameter. Mie theory, Bohren-Huffman coefficients (downward recurrence of the logarithmic
+    derivative, upward recurrence of the Riccati-Bessel functions). Checked: Qext = Qsca (no absorption), the d^6 law
+    of Rayleigh at small sizes and the forward sum Qext = 4/x^2 Re S(0)."""
+    out = np.empty(len(d_nm))
+    m = n_particle / n_medium
+    mu = np.cos(np.radians(angle_deg))
+    for i, d in enumerate(d_nm):
+        x = np.pi * d * n_medium / wavelength_nm
+        nmax = int(x + 4 * x ** (1 / 3) + 2)
+        mx = m * x
+        nmx = int(max(nmax, abs(mx))) + 15
+        D = np.zeros(nmx + 1, complex)
+        for n in range(nmx, 0, -1):
+            D[n - 1] = n / mx - 1 / (D[n] + n / mx)
+        psi0, psi1, chi0, chi1 = np.cos(x), np.sin(x), -np.sin(x), np.cos(x)
+        xi1 = psi1 - 1j * chi1
+        s1 = 0j
+        pi_prev, pi_cur = 0.0, 1.0
+        for n in range(1, nmax + 1):
+            psi = (2 * n - 1) / x * psi1 - psi0
+            chi = (2 * n - 1) / x * chi1 - chi0
+            xi = psi - 1j * chi
+            a = ((D[n] / m + n / x) * psi - psi1) / ((D[n] / m + n / x) * xi - xi1)
+            b = ((m * D[n] + n / x) * psi - psi1) / ((m * D[n] + n / x) * xi - xi1)
+            tau = n * mu * pi_cur - (n + 1) * pi_prev
+            s1 += (2 * n + 1) / (n * (n + 1)) * (a * pi_cur + b * tau)
+            pi_prev, pi_cur = pi_cur, ((2 * n + 1) * mu * pi_cur - (n + 1) * pi_prev) / n
+            psi0, psi1, chi0, chi1 = psi1, psi, chi1, chi
+            xi1 = psi1 - 1j * chi1
+        out[i] = abs(s1) ** 2
+    return out
+
+
+def dls_per_particle(d, conversion, rec, wavelength, n_particle):
+    """Intensity scattered by one particle of each diameter `d`: d^6 for 'Rayleigh', Mie theory for 'Mie' (needs the
+    scattering angle and solvent index of `rec`, the laser wavelength and the refractive index of the particle)."""
+    d = np.asarray(d, float)
+    if conversion == "Rayleigh":
+        return d ** 6
+    return mie_intensity(d, wavelength, rec['n'], n_particle, rec['angle'])
+
+
+def dls_reweight(d, p, kind, per_particle=None):
     """Distribution `p` (weights per diameter `d`, intensity-weighted) converted to 'Intensity', 'Volume' or 'Number'
-    weighting and normalised to sum 1. Rayleigh approximation (scattered intensity of a particle ~ d^6), the same as
-    the Distribution tab: it holds for particles much smaller than the wavelength in the medium (400 nm here) and
-    overestimates the weight of the large ones above about 100 nm, where the instrument uses Mie theory with the
-    refractive index of the particle."""
-    w = np.asarray(p, float) / np.asarray(d, float) ** _DLS_POWER[kind]
+    weighting and normalised to sum 1. `per_particle` is the intensity one particle of each diameter scatters (from
+    dls_per_particle): number ~ p / I1, volume ~ p d^3 / I1. Without it, the Rayleigh approximation I1 ~ d^6 is used
+    (number ~ p / d^6, volume ~ p / d^3), which holds for particles much smaller than the wavelength in the medium
+    (400 nm) and overweights the large ones above about 100 nm."""
+    d = np.asarray(d, float)
+    w = dls_reweight_weights(d, p, kind, d ** 6 if per_particle is None else per_particle)
     return w / w.sum()
 
 
-def dls_reweight_peaks(peaks, kind):
-    """Log-normal peaks of an intensity distribution in the other weightings. Multiplying a log-normal in ln d by
-    d^-k gives a log-normal with the same sigma and the median divided by exp(k sigma^2); the share of each peak
-    is multiplied by exp(-k mu + k^2 sigma^2 / 2) and renormalised. Returns new dicts {'median', 'sigma', 'fraction'}."""
-    k = _DLS_POWER[kind]
-    out = []
+def dls_reweight_peaks(peaks, kind, d=None, per_particle=None):
+    """Log-normal peaks of an intensity distribution in the other weightings: new dicts {'median', 'sigma'?, 'fraction'}.
+    Without `per_particle` (Rayleigh) it is analytic: multiplying a log-normal in ln d by d^-k gives a log-normal with
+    the same sigma and the median divided by exp(k sigma^2), and the share multiplied by exp(-k mu + k^2 sigma^2 / 2).
+    With `per_particle` (Mie, on the grid `d`) each peak is rebuilt on the grid, reweighted, and its median and share
+    are read from it (the shape is no longer log-normal, so 'sigma' is the S.D. of ln d)."""
+    if per_particle is None:
+        k = _DLS_POWER[kind]
+        out = []
+        for pk in peaks:
+            mu, s = np.log(pk['median']), pk['sigma']
+            out.append({'median': float(np.exp(mu - k * s * s)), 'sigma': s,
+                        'fraction': pk['fraction'] * float(np.exp(-k * mu + k * k * s * s / 2))})
+        tot = sum(pk['fraction'] for pk in out)
+        for pk in out:
+            pk['fraction'] /= tot
+        return out
+    lnd = np.log(d)
+    comps = []
     for pk in peaks:
-        mu, s = np.log(pk['median']), pk['sigma']
-        out.append({'median': float(np.exp(mu - k * s * s)), 'sigma': s,
-                    'fraction': pk['fraction'] * float(np.exp(-k * mu + k * k * s * s / 2))})
-    tot = sum(pk['fraction'] for pk in out)
-    for pk in out:
-        pk['fraction'] /= tot
+        g = np.exp(-0.5 * ((lnd - np.log(pk['median'])) / pk['sigma']) ** 2)
+        comps.append(pk['fraction'] * g / g.sum())
+    ws = [dls_reweight_weights(d, c, kind, per_particle) for c in comps]
+    total = sum(w.sum() for w in ws)
+    out = []
+    for w in ws:
+        cum = (np.cumsum(w) - w / 2) / w.sum()          # cumulative at the bin centres, not at their upper edges
+        med = float(np.exp(np.interp(0.5, cum, lnd)))
+        sd = float(np.sqrt(np.sum(w * (lnd - np.sum(w * lnd) / w.sum()) ** 2) / w.sum()))
+        out.append({'median': med, 'sigma': sd, 'fraction': float(w.sum() / total)})
     return out
+
+
+def dls_reweight_weights(d, p, kind, per_particle):
+    """Unnormalised weights of `p` in the weighting `kind` (the numerator of dls_reweight)."""
+    d = np.asarray(d, float)
+    return np.asarray(p, float) * {"Intensity": 1.0, "Volume": d ** 3, "Number": 1.0}[kind] / (
+        1.0 if kind == "Intensity" else np.asarray(per_particle, float))
+
+
+def dls_floor(p, fraction):
+    """`p` with the bins below `fraction` of its maximum set to zero. The regularised inversion leaves a few percent of
+    intensity at the edge of the size grid; dividing by the light one particle scatters (d^6 for small sizes) turns
+    it into most of the particles, so it is cut before the conversion to volume or number."""
+    p = np.asarray(p, float)
+    return np.where(p >= fraction * p.max(), p, 0.0)
 
 
 def dls_stats(d, p):
@@ -800,15 +887,34 @@ class NSZViewer:
             self._tips.extend(ToolTip(w, DLS_TIPS[key]) for w in (lab, ent))
         # the usual g1 cut-off depends on the model (0.1 regularised, 0.05 peaks)
         self.dls_model.trace_add("write", self._on_dls_model)
-        ttk.Separator(ctrl, orient="vertical").pack(side=tk.LEFT, fill=tk.Y, padx=(12, 4), pady=2)
-        tk.Label(ctrl, text="Weighting:", bg="white", font=("Helvetica", 9)).pack(side=tk.LEFT)
+        ctrl2 = tk.Frame(self.tab_dls, bg="white")
+        ctrl2.pack(fill=tk.X, padx=14)
+        tk.Label(ctrl2, text="Weighting:", bg="white", font=("Helvetica", 9)).pack(side=tk.LEFT)
         self.dls_weight = tk.StringVar(value=DLS_WEIGHTS[0])
         for w in DLS_WEIGHTS:
-            rb = tk.Radiobutton(ctrl, text=w, variable=self.dls_weight, value=w, bg="white", font=("Helvetica", 9),
+            rb = tk.Radiobutton(ctrl2, text=w, variable=self.dls_weight, value=w, bg="white", font=("Helvetica", 9),
                                 command=self._plot_dls)
             rb.pack(side=tk.LEFT, padx=2)
             self._tips.append(ToolTip(rb, DLS_TIPS['weight']))
-        btn = tk.Button(ctrl, text="Compute", command=self._plot_dls, bg="#FEF9C3", font=("Helvetica", 9))
+        self.dls_conv = tk.StringVar(value=DLS_CONVERSIONS[0])
+        cv = ttk.Combobox(ctrl2, textvariable=self.dls_conv, values=DLS_CONVERSIONS, state="readonly", width=9)
+        cv.pack(side=tk.LEFT, padx=(8, 0))
+        cv.bind("<<ComboboxSelected>>", lambda e: self._plot_dls())
+        lab = tk.Label(ctrl2, text="Tail cut (% of max)", bg="white", font=("Helvetica", 9))
+        lab.pack(side=tk.LEFT, padx=(8, 2))
+        self.dls_vars['tail'] = tk.StringVar(value='5')
+        ent = tk.Entry(ctrl2, textvariable=self.dls_vars['tail'], width=4)
+        ent.pack(side=tk.LEFT)
+        ent.bind("<Return>", lambda e: self._plot_dls())
+        self._tips.extend(ToolTip(w, DLS_TIPS['tail']) for w in (lab, ent))
+        lab = tk.Label(ctrl2, text="Particle n", bg="white", font=("Helvetica", 9))
+        lab.pack(side=tk.LEFT, padx=(8, 2))
+        self.dls_vars['np'] = tk.StringVar(value='')    # empty = the index stored in the file (1.59 if absent)
+        ent = tk.Entry(ctrl2, textvariable=self.dls_vars['np'], width=6)
+        ent.pack(side=tk.LEFT)
+        ent.bind("<Return>", lambda e: self._plot_dls())
+        self._tips.extend(ToolTip(w, DLS_TIPS['conv']) for w in (cv, lab, ent))
+        btn = tk.Button(ctrl2, text="Compute", command=self._plot_dls, bg="#FEF9C3", font=("Helvetica", 9))
         btn.pack(side=tk.LEFT, padx=12)
 
         self.dls_text = tk.Text(self.tab_dls, height=9, font=("Consolas", 9), bg="#F8FAFC", relief=tk.FLAT,
@@ -1150,6 +1256,7 @@ class NSZViewer:
             lines.append("The inversion needs scipy (pip install scipy).")
         model = self.dls_model.get()
         weight = self.dls_weight.get()
+        conv = self.dls_conv.get()
         palette = sample_colors()
         if wl is not None and self.selected:
             self.root.config(cursor="watch")
@@ -1170,11 +1277,12 @@ class NSZViewer:
                     continue
                 ax1.semilogx(rec['tau'] * 1e6, np.sqrt(np.clip(rec['acf'], 0, None)), 'o', ms=3, color=c, label=name)
                 ax1.semilogx(rec['tau'] * 1e6, r['fit'], '-', lw=1.3, color=c)
-                pw = dls_reweight(r['d'], r['p'], weight)
+                i1 = self._dls_i1(d, rec, r['d'], conv, wl) if weight != DLS_WEIGHTS[0] else None
+                pw = self._weighted(r, weight, i1)
                 ax2.semilogx(r['d'], pw / pw.max(), '-', lw=1.6, color=c, label=name)
                 if r['z'] is not None:
                     ax2.axvline(r['z'], color=c, ls=':', lw=1)
-                lines.extend(self._dls_summary(path, name, r, model, wl, alpha, gmin, weight))
+                lines.extend(self._dls_summary(path, name, r, model, wl, alpha, gmin, weight, i1, conv))
         finally:
             self.root.config(cursor="")
         ax1.set_xlabel("Delay time τ (µs)")
@@ -1192,7 +1300,37 @@ class NSZViewer:
         self._style_figure(self.fig_dls)
         self.canvas_dls.draw()
 
-    def _dls_summary(self, path, name, r, model, wl, alpha, gmin, weight=DLS_WEIGHTS[0]):
+    def _tail_fraction(self):
+        try:
+            return min(max(float(self.dls_vars['tail'].get()), 0.0), 50.0) / 100.0
+        except ValueError:
+            return 0.05
+
+    def _weighted(self, r, weight, i1):
+        """Distribution `r` of dls_analyse() in the chosen weighting (the tail cut applies to the free model)."""
+        p = r['p'] if r['peaks'] is not None or weight == DLS_WEIGHTS[0] else dls_floor(r['p'], self._tail_fraction())
+        return dls_reweight(r['d'], p, weight, i1)
+
+    def _particle_index(self, d):
+        """Refractive index of the particle: the value typed in the tab, else the one in the file, else 1.59."""
+        try:
+            v = float(self.dls_vars['np'].get())
+            if v > 1.0:
+                return v
+        except ValueError:
+            pass
+        return d['params'].get('n_particle') or 1.59
+
+    def _dls_i1(self, d, rec, grid, conv, wl):
+        """Light one particle scatters at each diameter of `grid` (None for Rayleigh: dls_reweight then uses d^6)."""
+        if conv == "Rayleigh":
+            return None
+        key = ('i1', d['path'], conv, wl, self._particle_index(d), len(grid))
+        if key not in self._dls_cache:
+            self._dls_cache[key] = dls_per_particle(grid, conv, rec, wl, self._particle_index(d))
+        return self._dls_cache[key]
+
+    def _dls_summary(self, path, name, r, model, wl, alpha, gmin, weight=DLS_WEIGHTS[0], i1=None, conv="Rayleigh"):
         """Text lines for one sample: cumulants and distribution, each with the instrument's value."""
         p = self.samples[path]['params']
 
@@ -1206,19 +1344,20 @@ class NSZViewer:
                        f"{inst('ZAvg_nm', '{:.1f}')} nm, PI {inst('PDI', '{:.3f}')}{diff}")
         w = weight.lower()
         by_int = weight == DLS_WEIGHTS[0]
+        how = (f"Mie, particle n {self._particle_index(self.samples[path]):g}" if conv == "Mie" else "Rayleigh (d^6)")
         if r['peaks'] is None:
-            mean, mode, sd = dls_stats(r['d'], dls_reweight(r['d'], r['p'], weight))
-            out.append(f"  Regularised distribution by {w} (α = {alpha:g}): mean {mean:.0f} nm, mode {mode:.0f} nm, "
+            mean, mode, sd = dls_stats(r['d'], self._weighted(r, weight, i1))
+            out.append(f"  Regularised distribution by {w} (α = {alpha:g}{'' if by_int else f', tail cut {100 * self._tail_fraction():g}%'}): mean {mean:.0f} nm, mode {mode:.0f} nm, "
                        f"S.D. {sd:.0f} nm" + (f"  |  instrument mean {inst('Mean1_nm', '{:.0f}')}, "
                        f"mode {inst('Mode_nm', '{:.0f}')}, S.D. {inst('SD1_nm', '{:.0f}')} nm" if by_int else
-                       "  (Rayleigh conversion from the intensity distribution)"))
+                       f"  ({how} conversion from the intensity distribution)"))
         else:
-            for i, pk in enumerate(dls_reweight_peaks(r['peaks'], weight), 1):
+            for i, pk in enumerate(dls_reweight_peaks(r['peaks'], weight, r['d'], i1), 1):
                 out.append(f"  Peak {i}: median {pk['median']:.0f} nm, σ(ln d) {pk['sigma']:.2f}, "
                            f"{100 * pk['fraction']:.0f}% of the {'scattered intensity' if by_int else w}")
             out.append(f"  rms of g1 {r['rms']:.4f}, BIC {r['bic']:.1f} (lower is better)" +
                        (f"  |  instrument mean {inst('Mean1_nm', '{:.0f}')}, mode {inst('Mode_nm', '{:.0f}')} nm"
-                        if by_int else "  (peaks converted from intensity by Rayleigh, d^-3 / d^-6)"))
+                        if by_int else f"  (peaks converted from intensity by {how})"))
             if len(r['peaks']) == 2:
                 r1 = self._dls_result(path, DLS_MODELS[1], wl, alpha, gmin)
                 verdict = ('two peaks are supported' if r['bic'] < r1['bic'] - 6 else
@@ -1228,7 +1367,7 @@ class NSZViewer:
         if not by_int:
             edge = r['peaks'] is None and (r['d'][np.argmax(r['p'])] >= r['d'][-1] * 0.99 or r['d'][np.argmax(r['p'])] <= r['d'][0] * 1.01)
             wide = r['peaks'] is not None and any(pk['sigma'] >= 1.15 for pk in r['peaks'])
-            out.append(f"  Note: dividing by d^{_DLS_POWER[weight]} amplifies the small-size side and the width of the intensity "
+            out.append(f"  Note: dividing by the light one particle scatters amplifies the small-size side and the width of the intensity "
                        f"distribution, so {w} values are far less certain than the intensity ones"
                        + ("; here a peak reaches the fit limit and dominates them" if wide or edge else "") + ".")
         return out

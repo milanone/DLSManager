@@ -64,13 +64,18 @@ results in `_dls_cache`; changing the model resets g1 min (0.1 regularised, 0.05
 The figure is saved/edited like the others (`fig_dls`, preset `double`). Tests: `tests/test_dls.py` (synthetic correlograms of
 known sizes, the real sample, the tab).
 
-Weighting selector (`dls_reweight`, `dls_reweight_peaks`, `dls_stats`, `DLS_WEIGHTS`): volume = p / d^3, number = p / d^6 on the
-log grid (Rayleigh, the same as `_to_number_dist`); for log-normal peaks the median moves by exp(-k sigma^2) and the share by
-exp(-k mu + k^2 sigma^2 / 2) (checked against the grid in `TestWeighting`). Instrument values are shown only for intensity (the
-file's mean/mode are intensity-based; its number/volume tables were never located). Not done: Mie conversion with the particle index
-(`MeasSampleRef`, 1.6 in the file), which is what the instrument uses; Rayleigh is off for particles above ~100 nm. Checked on the
-latex: one-peak median 140 / 116 / 96 nm (intensity / volume / number); with the 2-peak model or the regularised fit on 90 degree
-files a spurious small peak dominates volume and number (median 3 nm), hence the note in the text.
+Weighting selector (`dls_reweight`, `dls_reweight_peaks`, `dls_stats`, `dls_floor`, `DLS_WEIGHTS`, `DLS_CONVERSIONS`): number = p / I1,
+volume = p d^3 / I1 on the log grid, with I1 = light one particle scatters, from `mie_intensity` (Bohren-Huffman, |S1|^2, vertical
+polarisation, homogeneous non-absorbing sphere, index `MeasSampleRef` of the file = `params['n_particle']`, 1.6 default in the
+instrument, editable in the tab) or d^6 (Rayleigh, as `_to_number_dist`). Log-normal peaks: analytic for Rayleigh (median moves by
+exp(-k sigma^2), share by exp(-k mu + k^2 sigma^2 / 2)), rebuilt on the grid for Mie (`dls_reweight_peaks(..., d, per_particle)`).
+`TestMie` checks d^6 at small sizes and Qext = Qsca and S(0) against scipy's spherical Bessel functions (independent code), not
+against the instrument. The free inversion leaves ~2% intensity on the 10 nm grid edge: unconverted, it becomes ALL the
+particles (number mean 10 nm on the 450 nm liposomes), so `dls_floor` drops bins below the 'Tail cut' (5% of the maximum, an entry in the
+tab, 0 keeps everything) before volume/number; this is applied to the free model only. Instrument values are shown only for
+intensity (its number/volume tables were never located). Mie at 173 degrees oscillates with size (latex volume mode 252 nm
+against 142 in intensity), and liposomes are shells, not solid spheres: numbers for them are indicative. Controls are on two rows
+(they did not fit the window on one). Not compared: any instrument volume/number output.
 
 Verified on 15 polystyrene latex measurements (the `20261119 DLS lattice e liposomi` folder of LabSpectrumManager, 130 nm by TEM;
 `tests/test_dls.py::TestLatex` uses the three at 173 degrees and skips without them): Z-average -4.0..+0.3% of the instrument's

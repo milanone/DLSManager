@@ -168,6 +168,59 @@ class TestLatex(unittest.TestCase):
             self.assertLess(one['bic'] - two['bic'], 6)        # a second peak is not supported
 
 
+class TestMie(unittest.TestCase):
+    def test_small_particles_follow_the_d6_law(self):
+        d = np.array([5.0, 10.0, 20.0])
+        i = nsz.mie_intensity(d, 532.0, 1.333, 1.59, 90.0)
+        ratio = i / d ** 6
+        np.testing.assert_allclose(ratio, ratio[0], rtol=0.01)
+
+    def test_matches_an_independent_sum_of_the_coefficients(self):
+        # Forward scattering: Qext = 4/x^2 Re S(0), with S(0) = sum (2n+1)(a+b)/2, and Qext = Qsca without absorption.
+        # Rebuilt here from scipy's spherical Bessel functions, independently of the recurrences in the program.
+        from scipy.special import spherical_jn, spherical_yn
+        n_med, n_p, wl, d = 1.333, 1.59, 532.0, 400.0
+        x, m = np.pi * d * n_med / wl, n_p / n_med
+        n = np.arange(1, int(x + 4 * x ** (1 / 3) + 2) + 1)
+
+        def psi(z, k):
+            return z * spherical_jn(k, z)
+
+        def dpsi(z, k):
+            return spherical_jn(k, z) + z * spherical_jn(k, z, derivative=True)
+
+        def xi(z, k):
+            return z * (spherical_jn(k, z) + 1j * spherical_yn(k, z))
+
+        def dxi(z, k):
+            h = spherical_jn(k, z) + 1j * spherical_yn(k, z)
+            return h + z * (spherical_jn(k, z, derivative=True) + 1j * spherical_yn(k, z, derivative=True))
+
+        a = (m * psi(m * x, n) * dpsi(x, n) - psi(x, n) * dpsi(m * x, n)) / (m * psi(m * x, n) * dxi(x, n) - xi(x, n) * dpsi(m * x, n))
+        b = (psi(m * x, n) * dpsi(x, n) - m * psi(x, n) * dpsi(m * x, n)) / (psi(m * x, n) * dxi(x, n) - m * xi(x, n) * dpsi(m * x, n))
+        s0 = np.sum((2 * n + 1) * (a + b)) / 2
+        qext, qsca = 4 / x ** 2 * s0.real, 2 / x ** 2 * np.sum((2 * n + 1) * (abs(a) ** 2 + abs(b) ** 2))
+        self.assertAlmostEqual(qext, qsca, places=6)                    # no absorption
+        i0 = nsz.mie_intensity(np.array([d]), wl, n_med, n_p, 0.0)[0]   # the program's S1(0)
+        self.assertAlmostEqual(i0, abs(s0) ** 2, delta=1e-6 * abs(s0) ** 2)
+
+    def test_mie_conversion_differs_from_rayleigh_for_large_particles(self):
+        d = np.geomspace(20, 2000, 60)
+        i1 = nsz.mie_intensity(d, 532.0, 1.333, 1.59, 173.0)
+        self.assertTrue(np.all(i1 > 0))
+        p = np.exp(-0.5 * ((np.log(d) - np.log(300)) / 0.3) ** 2)
+        p /= p.sum()
+        mie = nsz.dls_stats(d, nsz.dls_reweight(d, p, "Number", i1))[1]
+        ray = nsz.dls_stats(d, nsz.dls_reweight(d, p, "Number"))[1]
+        self.assertNotAlmostEqual(mie, ray, delta=5.0)
+        # a per-particle intensity of d^6 reproduces the Rayleigh result exactly, peaks included
+        np.testing.assert_allclose(nsz.dls_reweight(d, p, "Volume", d ** 6), nsz.dls_reweight(d, p, "Volume"))
+        peaks = [{'median': 300.0, 'sigma': 0.3, 'fraction': 1.0}]
+        a = nsz.dls_reweight_peaks(peaks, "Number")[0]['median']
+        b = nsz.dls_reweight_peaks(peaks, "Number", np.geomspace(5, 1e4, 4000), np.geomspace(5, 1e4, 4000) ** 6)[0]['median']
+        self.assertAlmostEqual(a, b, delta=0.01 * a)
+
+
 class TestWeighting(unittest.TestCase):
     def test_reweight_matches_rayleigh_and_normalises(self):
         d = np.array([10.0, 100.0])
@@ -249,10 +302,21 @@ class TestDlsTab(unittest.TestCase):
         self.app.dls_weight.set("Number")
         self.app._plot_dls()
         self.assertEqual(self.app.fig_dls.axes[1].get_title(), "Size distribution by number")
-        self.assertIn("Rayleigh", self.app.dls_text.get("1.0", "end"))
+        self.assertIn("Mie", self.app.dls_text.get("1.0", "end"))             # Mie is the default conversion
         self.app.dls_weight.set("Intensity")
         self.app._plot_dls()
         self.assertIn("instrument mean", self.app.dls_text.get("1.0", "end"))
+
+    def test_mie_and_rayleigh_conversions_in_the_tab(self):
+        self.app.notebook.select(self.app.tab_dls)
+        self.app.dls_weight.set("Number")
+        self.app.dls_conv.set("Mie")
+        self.app.dls_vars['np'].set("1.59")
+        self.app._plot_dls()
+        self.assertIn("Mie, particle n 1.59", self.app.dls_text.get("1.0", "end"))
+        self.app.dls_conv.set("Rayleigh")
+        self.app._plot_dls()
+        self.assertIn("Rayleigh", self.app.dls_text.get("1.0", "end"))
 
     def test_models_and_invalid_settings(self):
         self.app.notebook.select(self.app.tab_dls)

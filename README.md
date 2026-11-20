@@ -27,8 +27,9 @@ exports everything to Excel.
   instrument's values. Cumulants (Z-average and PI) from a quadratic fit of ln g₁; an intensity-weighted size distribution
   either free (regularised non-negative least squares) or as one or two log-normal peaks with a free intercept of g₁
   and a BIC that says whether the second peak is supported. Needs `scipy`.
-  The distribution can be shown by intensity, volume or number (divided by d³ and d⁶, Rayleigh approximation, as in the
-  Distribution tab; the peaks are converted analytically). The instrument's own values are shown only for intensity. See "Validation" for how far to trust it.
+  The distribution can be shown by intensity, volume or number, converted with Mie theory (the light one particle scatters
+  at the measurement angle, with the refractive index of the particle stored in the file or typed) or with the Rayleigh
+  approximation (d⁶). The instrument's own values are shown only for intensity. See "Validation" for how far to trust it.
 - **Parameters** tab: date, solvent, scattering angle, wavelength, temperature, viscosity,
   refractive index, peak and mean sizes, SD, D10/D50/D90, mode, median, Z-average, PDI and span.
 - **Excel export**: one `.xlsx` per sample with sheets for the ACF (data, fit, residuals),
@@ -80,12 +81,15 @@ the upper size limit (3000 nm) and the peak fits hit their width limit: the meth
 such a sample. The two-peak split is an ill-posed inversion: it is not stable between replicates and is only meaningful for sizes
 that differ by about 3 times or more; the BIC difference is shown for that reason.
 
-Volume and number weightings are Rayleigh conversions of the fitted intensity distribution, not measurements: they are
-exact only for particles much smaller than the wavelength in the medium (400 nm), and dividing by d³ or d⁶ amplifies the
-small-size side and any tail. On the 130 nm latex the one-peak number median is 96 nm (width σ 0.25 alone moves it by a
-factor 0.69), and where a fit is at its limit (σ 1.2, or the regularised mode at the edge of the grid) a spurious small peak
-takes over the volume and number distributions; the program says so in a note. The instrument uses Mie theory with the
-particle refractive index, which this program does not.
+Volume and number weightings are conversions of the fitted intensity distribution, not measurements. Mie theory is the
+default (homogeneous sphere, no absorption, vertical polarisation; the code reproduces Qext = Qsca and S(0) from an
+independent computation with scipy's Bessel functions, but it was not compared with the instrument's own volume/number
+tables, which are not read). Rayleigh (d⁶) is exact only well below 100 nm. Both divide by a quantity that falls steeply
+with size, so the small-size side and any tail are amplified: for the free distribution a tail cut (default 5% of the
+maximum) drops the few percent that the inversion leaves at the edge of the size grid, which otherwise becomes all of the
+particles (on a 450 nm liposome sample the number mean goes from 10 nm without the cut to about 70-100 nm with it). With
+Mie at 173° the per-particle intensity oscillates with size, so volume and number can change a lot with the particle
+index. Liposomes are not homogeneous spheres of index 1.6, so for them the numbers are indicative only.
 
 ## Notes on the format
 
