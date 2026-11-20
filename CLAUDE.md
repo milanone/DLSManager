@@ -64,6 +64,14 @@ results in `_dls_cache`; changing the model resets g1 min (0.1 regularised, 0.05
 The figure is saved/edited like the others (`fig_dls`, preset `double`). Tests: `tests/test_dls.py` (synthetic correlograms of
 known sizes, the real sample, the tab).
 
+Instrument range: the files store the correlator channels the instrument used for the size distribution as int32 `Dist_ChannelFrom` (7 in
+every file seen, i.e. 1 us) and `Dist_ChannelTo` (26-40, different per measurement; for the 450 nm liposomes 33 = `len(fit) + fit_offset`
+of Object10; for the 2026-11-19 files Object10 does not follow it). `params['Range_from'/'Range_to']` (1-based, inclusive),
+`dls_record()['range']` (0-based [first, end)), `dls_analyse(..., use_range=True)` passes tau_min/tau_max to the inversions (cumulants
+unrestricted); the tab's 'Instrument range' checkbox (on by default) draws the excluded points hollow. Effect on the results is small
+(the g1 minimum already cuts the tail): 450 nm liposomes, mean/mode 453/475 with and without; it does not explain the gap to the
+instrument's 413/380. `ChannelsCumuFrom/To` (1-41) and `FlAutoChannels` (2) are also in the file, not used.
+
 Weighting selector (`dls_reweight`, `dls_reweight_peaks`, `dls_stats`, `dls_floor`, `DLS_WEIGHTS`, `DLS_CONVERSIONS`): number = p / I1,
 volume = p d^3 / I1 on the log grid, with I1 = light one particle scatters, from `mie_intensity` (Bohren-Huffman, |S1|^2, vertical
 polarisation, homogeneous non-absorbing sphere, index `MeasSampleRef` of the file = `params['n_particle']`, 1.6 default in the

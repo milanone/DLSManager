@@ -81,6 +81,11 @@ the upper size limit (3000 nm) and the peak fits hit their width limit: the meth
 such a sample. The two-peak split is an ill-posed inversion: it is not stable between replicates and is only meaningful for sizes
 that differ by about 3 times or more; the BIC difference is shown for that reason.
 
+The correlator channels that the instrument used for the size distribution are read from the file (from channel 7 up to a
+channel that differs between measurements) and applied to the inversions by default (*Instrument range*; the excluded points are
+drawn hollow). On the files checked this changes the distributions very little, so it does not explain why the program's
+free distribution of the 450 nm liposomes (mean 453 nm, mode 475 nm) differs from the instrument's (413 and 380 nm).
+
 Volume and number weightings are conversions of the fitted intensity distribution, not measurements. Mie theory is the
 default (homogeneous sphere, no absorption, vertical polarisation; the code reproduces Qext = Qsca and S(0) from an
 independent computation with scipy's Bessel functions, but it was not compared with the instrument's own volume/number

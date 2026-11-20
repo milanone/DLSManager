@@ -264,6 +264,14 @@ def _read_nsz(path, ole):
                 if key in data:
                     return data
         return s(default)
+    def int_key(key):
+        """int32 stored after `key` and a NUL byte in any stream, or None."""
+        for entry in ole.listdir(streams=True, storages=False):
+            m = re.search(re.escape(key) + b'\x00(.{4})', ole.openstream(entry).read(), re.S)
+            if m:
+                return struct.unpack('<i', m.group(1))[0]
+        return None
+    ch_from, ch_to = int_key(b'Dist_ChannelFrom'), int_key(b'Dist_ChannelTo')
     d34 = by_key(b'MeasAngle', 'Base34')
     d38 = by_key(b'Sample_Name', 'Base38')
     p34 = parse_props(d34)
@@ -292,6 +300,9 @@ def _read_nsz(path, ole):
         'Temp_C':   pv(p34, 'MeasHolderTemp'),
         'Visc_mPas':pv(p34, 'MeasSolventVisco'),
         'n_solvent': pv(p34, 'MeasSolventRef'),
+        # Correlator channels (1-based, inclusive) the instrument used for the size distribution; None if absent
+        'Range_from': ch_from if ch_from and ch_to and 1 <= ch_from < ch_to <= len(tau) else None,
+        'Range_to': ch_to if ch_from and ch_to and 1 <= ch_from < ch_to <= len(tau) else None,
         'n_particle': pv(p34, 'MeasSampleRef'),   # index entered in the instrument software (1.6 default)
         # CalcMean/SD/Mode/PeakPos/D10/D50/D90 are stored as RADII → ×2
         # PDI: CalcTotalPI is wrong, use Cum_fPi
@@ -392,6 +403,10 @@ DLS_TIPS = {
     'tail': "Free (regularised) distribution only, for volume and number: bins below this percentage of the maximum "
             "are dropped before the conversion. The inversion leaves a few percent of intensity at the edge of the "
             "size grid, which the conversion would turn into most of the particles. 0 keeps everything.",
+    'range': "Use only the correlator channels that the instrument software used for the size distribution (stored in "
+             "the file: from channel 7 up to a channel that depends on the measurement). Without it, every point "
+             "above the g1 minimum is used. Files without that information use all points. The cumulants are not "
+             "restricted.",
     'gmin': "Only the points of the correlogram with g1 = sqrt(ACF) above this value are used: the tail is mostly "
             "noise. 0.1 for the regularised model, 0.05 for the peaks.",
 }
@@ -425,7 +440,8 @@ def dls_cumulants(tau, acf, q2, temp_c, visc_mpas, gmin=0.30):
     return float(_KB * (temp_c + 273.15) / (3 * np.pi * visc_mpas * 1e-3 * (G / q2)) * 1e9), float(mu2 / G ** 2)
 
 
-def dls_invert(tau, acf, q2, temp_c, visc_mpas, alpha=1.0, gmin=0.1, dmin=10.0, dmax=3000.0, ngrid=100, tau_min=1e-6):
+def dls_invert(tau, acf, q2, temp_c, visc_mpas, alpha=1.0, gmin=0.1, dmin=10.0, dmax=3000.0, ngrid=100, tau_min=1e-6,
+               tau_max=np.inf):
     """Intensity-weighted size distribution by regularised non-negative least squares: g1 = sum_j p_j exp(-Gamma_j t)
     with p >= 0 on a log grid of diameters, weighted by g1 and a second-difference smoothing penalty alpha. Returns
     (diameters nm, p normalised to sum 1, fitted g1 at all delays). Needs scipy (nnls)."""
@@ -434,7 +450,7 @@ def dls_invert(tau, acf, q2, temp_c, visc_mpas, alpha=1.0, gmin=0.1, dmin=10.0, 
     g1 = np.sqrt(np.clip(acf, 0, None))
     d = np.geomspace(dmin, dmax, ngrid)
     gam = _dls_gamma(d, q2, temp_c, visc_mpas)
-    sel = (g1 > gmin) & (tau >= tau_min)
+    sel = (g1 > gmin) & (tau >= tau_min) & (tau <= tau_max)
     K = np.exp(-np.outer(tau[sel], gam))
     w = g1[sel]
     L = np.diff(np.eye(ngrid), 2, axis=0)
@@ -444,7 +460,7 @@ def dls_invert(tau, acf, q2, temp_c, visc_mpas, alpha=1.0, gmin=0.1, dmin=10.0, 
 
 
 def dls_fit_peaks(tau, acf, q2, temp_c, visc_mpas, n_peaks=2, gmin=0.05, dmin=10.0, dmax=1e4, ngrid=160,
-                  tau_min=1e-6):
+                  tau_min=1e-6, tau_max=np.inf):
     """Intensity distribution as n_peaks log-normal peaks (median diameter, width in ln d, share of the intensity),
     fitted to g1 by least squares from several starting points (the intercept of g1 is a free parameter). Returns
     (diameters, p, fitted g1, peaks, rms of g1, BIC) where peaks is a list of dicts {'median', 'sigma', 'fraction'} sorted
@@ -458,7 +474,7 @@ def dls_fit_peaks(tau, acf, q2, temp_c, visc_mpas, n_peaks=2, gmin=0.05, dmin=10
     d = np.geomspace(dmin, dmax, ngrid)
     lnd = np.log(d)
     gam = _dls_gamma(d, q2, temp_c, visc_mpas)
-    sel = (g1 > gmin) & (tau >= tau_min)
+    sel = (g1 > gmin) & (tau >= tau_min) & (tau <= tau_max)
     K = np.exp(-np.outer(tau[sel], gam))
     w, y = g1[sel], g1[sel]
     n = n_peaks
@@ -495,7 +511,7 @@ def dls_fit_peaks(tau, acf, q2, temp_c, visc_mpas, n_peaks=2, gmin=0.05, dmin=10
     return (d, p, best.x[3 * n] * (np.exp(-np.outer(tau, gam)) @ p), peaks, float(np.sqrt(rss / npts)), float(bic))
 
 
-def dls_analyse(rec, model=DLS_MODELS[0], wavelength=532.0, alpha=1.0, gmin=None):
+def dls_analyse(rec, model=DLS_MODELS[0], wavelength=532.0, alpha=1.0, gmin=None, use_range=False):
     """Z-average, PI and the intensity distribution of a stored correlogram `rec` ({'tau' in seconds, 'acf', 'angle',
     'n', 'visc', 'T'}) with the chosen model of DLS_MODELS. Returns a dict with z, pi (cumulants, may be None), d, p,
     fit, peaks (None for the regularised model), mean, mode, sd of the distribution."""
@@ -503,12 +519,17 @@ def dls_analyse(rec, model=DLS_MODELS[0], wavelength=532.0, alpha=1.0, gmin=None
     args = (rec['tau'], rec['acf'], q2, rec['T'], rec['visc'])
     cum = dls_cumulants(*args)
     out = {'z': cum[0] if cum else None, 'pi': cum[1] if cum else None, 'peaks': None}
+    # delays the inversion may use: those of the channels the instrument used (cumulants are not restricted)
+    lim = {}
+    if use_range and rec.get('range'):
+        lo, hi = rec['range']
+        lim = {'tau_min': rec['tau'][lo] * (1 - 1e-9), 'tau_max': rec['tau'][hi - 1] * (1 + 1e-9)}
     if model == DLS_MODELS[0]:
-        out['d'], out['p'], out['fit'] = dls_invert(*args, alpha=alpha, gmin=0.1 if gmin is None else gmin)
+        out['d'], out['p'], out['fit'] = dls_invert(*args, alpha=alpha, gmin=0.1 if gmin is None else gmin, **lim)
     else:
         n = 1 if model == DLS_MODELS[1] else 2
         out['d'], out['p'], out['fit'], out['peaks'], out['rms'], out['bic'] = dls_fit_peaks(
-            *args, n_peaks=n, gmin=0.05 if gmin is None else gmin)
+            *args, n_peaks=n, gmin=0.05 if gmin is None else gmin, **lim)
     d, p = out['d'], out['p']
     mean = float(np.sum(d * p) / np.sum(p))
     out['mode'], out['mean'] = float(d[np.argmax(p)]), mean
@@ -639,8 +660,11 @@ def dls_record(d):
     keys = ('Angle_deg', 'n_solvent', 'Visc_mPas', 'Temp_C')
     if not d.get('tau_aligned') or any(p.get(k) is None for k in keys) or len(d['tau']) < 8:
         return None
-    return {'tau': d['tau'] * 1e-6, 'acf': d['acf'], 'angle': p['Angle_deg'], 'n': p['n_solvent'],
-            'visc': p['Visc_mPas'], 'T': p['Temp_C']}
+    rec = {'tau': d['tau'] * 1e-6, 'acf': d['acf'], 'angle': p['Angle_deg'], 'n': p['n_solvent'],
+           'visc': p['Visc_mPas'], 'T': p['Temp_C']}
+    if p.get('Range_from'):
+        rec['range'] = (p['Range_from'] - 1, p['Range_to'])      # 0-based [first, end) channel indices
+    return rec
 
 
 # ── Main application ──────────────────────────────────────────────────────────
@@ -900,6 +924,11 @@ class NSZViewer:
         cv = ttk.Combobox(ctrl2, textvariable=self.dls_conv, values=DLS_CONVERSIONS, state="readonly", width=9)
         cv.pack(side=tk.LEFT, padx=(8, 0))
         cv.bind("<<ComboboxSelected>>", lambda e: self._plot_dls())
+        self.dls_range = tk.BooleanVar(value=True)
+        rb = tk.Checkbutton(ctrl2, text="Instrument range", variable=self.dls_range, bg="white", font=("Helvetica", 9),
+                            command=self._plot_dls)
+        rb.pack(side=tk.LEFT, padx=(12, 0))
+        self._tips.append(ToolTip(rb, DLS_TIPS['range']))
         lab = tk.Label(ctrl2, text="Tail cut (% of max)", bg="white", font=("Helvetica", 9))
         lab.pack(side=tk.LEFT, padx=(8, 2))
         self.dls_vars['tail'] = tk.StringVar(value='5')
@@ -1224,9 +1253,10 @@ class NSZViewer:
         self._plot_dls()
 
     def _dls_result(self, path, model, wl, alpha, gmin):
-        key = (path, model, wl, alpha, gmin)
+        use_range = self.dls_range.get()
+        key = (path, model, wl, alpha, gmin, use_range)
         if key not in self._dls_cache:
-            self._dls_cache[key] = dls_analyse(dls_record(self.samples[path]), model, wl, alpha, gmin)
+            self._dls_cache[key] = dls_analyse(dls_record(self.samples[path]), model, wl, alpha, gmin, use_range)
         return self._dls_cache[key]
 
     def _set_dls_text(self, lines):
@@ -1275,7 +1305,15 @@ class NSZViewer:
                 except Exception as e:
                     lines.append(f"{name}: inversion failed ({e}).")
                     continue
-                ax1.semilogx(rec['tau'] * 1e6, np.sqrt(np.clip(rec['acf'], 0, None)), 'o', ms=3, color=c, label=name)
+                g1 = np.sqrt(np.clip(rec['acf'], 0, None))
+                if self.dls_range.get() and rec.get('range'):
+                    lo, hi = rec['range']
+                    out_of = np.ones(len(g1), bool)
+                    out_of[lo:hi] = False
+                    ax1.semilogx(rec['tau'][out_of] * 1e6, g1[out_of], 'o', ms=3, mfc='none', color=c, alpha=0.5)
+                    ax1.semilogx(rec['tau'][~out_of] * 1e6, g1[~out_of], 'o', ms=3, color=c, label=name)
+                else:
+                    ax1.semilogx(rec['tau'] * 1e6, g1, 'o', ms=3, color=c, label=name)
                 ax1.semilogx(rec['tau'] * 1e6, r['fit'], '-', lw=1.3, color=c)
                 i1 = self._dls_i1(d, rec, r['d'], conv, wl) if weight != DLS_WEIGHTS[0] else None
                 pw = self._weighted(r, weight, i1)
@@ -1337,7 +1375,10 @@ class NSZViewer:
         def inst(key, fmt):
             return fmt.format(p[key]) if p.get(key) is not None else "n/a"
 
-        out = [f"{name}"]
+        rec = dls_record(self.samples[path])
+        out = [f"{name}" + (f"  [instrument range: channels {rec['range'][0] + 1}-{rec['range'][1]}, "
+                            f"{rec['tau'][rec['range'][0]] * 1e6:.3g}-{rec['tau'][rec['range'][1] - 1] * 1e6:.4g} µs]"
+                            if self.dls_range.get() and rec.get('range') else "")]
         if r['z'] is not None:
             diff = f" ({100 * (r['z'] / p['ZAvg_nm'] - 1):+.1f}%)" if p.get('ZAvg_nm') else ""
             out.append(f"  Z-average {r['z']:.1f} nm, PI {r['pi']:.3f} (cumulants, g1 > 0.3)  |  instrument "

@@ -258,6 +258,33 @@ class TestWeighting(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_SCIPY, "scipy not installed")
+class TestInstrumentRange(unittest.TestCase):
+    def test_range_limits_the_points_the_inversion_uses(self):
+        rec = record([100.0], [1.0])
+        rec['range'] = (6, 25)                                    # channels 7-25
+        r = nsz.dls_analyse(rec, nsz.DLS_MODELS[1], 532.0, use_range=True)
+        self.assertEqual(len(r['fit']), len(TAU))                 # the fit is still evaluated at every delay
+        self.assertAlmostEqual(r['peaks'][0]['median'], 100.0, delta=10.0)
+        self.assertEqual(nsz.dls_analyse(rec, nsz.DLS_MODELS[0], 532.0, use_range=False)['p'].shape,
+                         nsz.dls_analyse(rec, nsz.DLS_MODELS[0], 532.0, use_range=True)['p'].shape)
+
+    def test_record_carries_the_range_of_the_file(self):
+        d = {'tau': TAU * 1e6, 'acf': np.ones(len(TAU)), 'tau_aligned': True,
+             'params': {'Angle_deg': 173.0, 'n_solvent': 1.333, 'Visc_mPas': 0.9, 'Temp_C': 25.0,
+                        'Range_from': 7, 'Range_to': 33}}
+        self.assertEqual(nsz.dls_record(d)['range'], (6, 33))
+
+
+@unittest.skipUnless(os.path.isfile(os.path.join(LATEX_DIR, "..", "20261118 lipo vuoti varie size DLS",
+                                                 "lipo 450 nm 1a40 in PBS_0826.nsz")), "450 nm liposome file not present")
+class TestRangeInFile(unittest.TestCase):
+    def test_range_of_the_file_matches_the_fit_span_of_the_instrument(self):
+        d = nsz.load_nsz(os.path.join(LATEX_DIR, "..", "20261118 lipo vuoti varie size DLS", "lipo 450 nm 1a40 in PBS_0826.nsz"))
+        self.assertEqual((d['params']['Range_from'], d['params']['Range_to']), (7, 33))
+        self.assertEqual(d['params']['Range_to'], len(d['fit']) + d['fit_offset'])        # Object10 spans the same channels
+
+
+@unittest.skipUnless(HAS_SCIPY, "scipy not installed")
 class TestDlsTab(unittest.TestCase):
     """The tab of the application, on a synthetic sample shaped like load_nsz() output (needs a screen)."""
 
