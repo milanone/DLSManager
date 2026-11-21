@@ -25,6 +25,10 @@ the `spettri di esempio` folders of LabSpectrumManager). The earlier sample (`li
 layout, PI 0.6) is gone from the folder; its results are described below. Tk tests need a screen; tests that need the sample are skipped
 without it. The three `screenshot*.png` are the real program with the 0843 file (window grabbed with `CopyFromScreen`, cropped).
 
+Icon (2026-11-21): `DLSManager.ico` (16, 24, 32, 48, 64 px, classic BMP frames) is drawn by `examples/make_icon.py` in the style of
+`SpectrumDigitizer.ico` / `plot_editor.ico` (white rounded tile, black axes, orange and blue curves): the correlation decay with its
+points and the narrow distribution peak. Requested by Francesco for XYplorer; the window does not use it (`iconbitmap` is not set).
+
 ## Architecture
 
 Single file `DLSManager.pyw`: parser functions (`f32`, `parse_props`, `load_nsz` / `_read_nsz`, `dump_nsz` for

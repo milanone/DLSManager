@@ -66,6 +66,9 @@ pythonw DLSManager.pyw [file.nsz ...]
 
 `pythonw` starts it without a console window (`python` keeps one).
 
+`DLSManager.ico` is an icon for the program's files in a file manager (drawn by `examples/make_icon.py`, the same style as the
+other programs' icons: a classic 16-64 px ICO).
+
 ## Tests
 
 ```
