@@ -986,6 +986,10 @@ class DLSManager:
     def __init__(self, root):
         self.root = root
         self.root.title("DLS Manager — Horiba SZ-100")
+        try:      # the icon next to the program; the window keeps the default one if the file is missing
+            self.root.iconbitmap(os.path.join(os.path.dirname(os.path.abspath(__file__)), "DLSManager.ico"))
+        except tk.TclError:
+            pass
         self.root.geometry("1380x840")
         if psk is None and not _psk_config().get('declined'):
             self.root.after(400, lambda: self._offer_plotstylekit(PSK_PROBLEM))
