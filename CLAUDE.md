@@ -135,6 +135,26 @@ lipo 100 `_0843` 157/152/38 vs 154/150/37, 144/119/37 vs 140/126/35, 123/105/26 
 vs 370 (the instrument puts its peak ~10-15% higher: its placement rule is not reproduced, as for the media/Z ratio of 1.38). Not verified: what
 the other forms of the instrument (narrow / broad?) and the Polydisperse mode do; Francesco's guess is that Polydisperse allows several peaks.
 
+Instrument forms, from Francesco's recalculations (2026-11-23; `LabSpectrumManager/size da spettro scattering/`: the software's 'Recalculation' dialog
+screenshots, the scanned Quick Start manual, 7 recalculated CSVs; local only, the manual is Horiba's). The dialog: *Form of Distribution* =
+Monodisperse | Polydisperse, and Broad | Standard | Narrow | Manual (resolution -1.00..1.00). Its text: the form is a condition to compute the size
+distribution from the autocorrelation function (width of the distribution and size dispersity); the manual's table of the resolution values is
+Monodisperse Broad -0.5 / Standard 0.3 / Narrow 0.6, Polydisperse Broad -0.3 / Standard 0.1 / Narrow 0.3. The nsz field `Dist_Resolution` = 0.3 in all 29
+files = Monodisperse Standard (the manual recommends exactly that for a PSL standard). Measured on the recalculated CSVs (sigma of ln d of the size table,
+first table only: the CSV continues with residual and correlation tables): Monodisperse Broad 0.42 (lipo 100) and 0.45 (latex), Standard 0.23-0.25, Narrow
+0.07 (3 bins, S.D. 10 nm); Polydisperse Standard 0.24 (lipo 100, as Monodisperse) and 0.30 (latex, mode 143 against 160, S.D. 53 against 38). So the resolution
+sets a FIXED width of the peak (monotone: -0.5 -> 0.43, 0.1 -> 0.30, 0.3 -> 0.24, 0.6 -> 0.07), whatever the data; the residual of the fit stays ~6e-4..1e-3 for all
+forms (the data do not tell the widths apart). Polydisperse allows several peaks: the 450 nm liposomes (PI 0.38) give TWO peaks, 156.8 nm (39% of the area, S.D. 36) and
+611.4 nm (61%, S.D. 218), total mean 433 / S.D. 280 / mode 142 (Standard) and the same with Broad (158 / 613), against the single peak of 413 nm in Monodisperse.
+Our `dls_fit_peaks` two-peak model on the same file (`_0826`) finds 172 nm (41%, sigma 0.47) and 588 nm (59%, sigma 0.05), BIC difference -19 in favour of two peaks:
+the same bimodal answer. Our Width = Standard (sigma 0.24) equals the instrument's Monodisperse Standard; our Narrow (x0.5 of the computed width, sigma ~0.2) is NOT its
+Narrow (sigma 0.07) and our Broad is the free inversion (sigma 0.4-0.7), close to its Broad only for narrow samples. Advanced dialog: Scattering Light Intensity /
+Volume (Rayleigh) / Number (Rayleigh), 'Convert by Mie scattering' with 'Averaged Mie' and 'Mie' for volume and number (the instrument averages Mie over an angle range, which the
+Aperture entry imitates; its range is not given), Threshold q 5.0 %, calculation range (radius) 0.15-4000 nm, auto channel range for histogram and cumulant, 'Eliminate the
+influence of particles outside the measurement range' = Yes. The recalculated CSVs all state `Representation of Result: Scattering Light Intensity`; the Quick Start manual
+(17 scanned pages, no text layer) only gives the procedure, no algorithm. The recalculations were of the measurements `_0826` (450 nm), `_0848` (lipo 100 1a20) and
+the latex `_0852`-`_0854`; no new .nsz was provided, so which nsz fields the forms change was not checked.
+
 Diameter axis (2026-11-20): the distribution and cumulative panels use the same limits for both sources, 10 to 1e4 nm (log) or 0 to 1000 nm (linear); the
 instrument's table starts at 0.34 nm and the recomputed grid at 10 nm. The limits are set AGAIN after `_style_figure()`, because PlotStyleKit's style()
 autoscales x tight to the data and would undo them (it ignores a caller's xlim unless the aspect is locked; extending it would touch every host app).
