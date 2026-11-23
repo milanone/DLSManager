@@ -27,7 +27,7 @@ without it. The three `screenshot*.png` are the real program with the 0843 file 
 
 Guide (2026-11-23): `docs/sz100_guide.html` (own words, no screenshots, no text of Horiba's manual: the manual is copyrighted and this repository is
 public) opened by Help > 'SZ-100 settings and recalculation (guide)' (`open_guide()`, `DLSManager.GUIDE`, `webbrowser`). A faithful hypertext and a clean PDF of the
-scanned manual exist only in the unpublished folder `progetti/SZ100Manual/` (no git; never push it). The guide's facts: the instrument's forms and resolution
+scanned manual exist only in the unpublished folder `DLSManager/SZ100Manual/` (moved there on 2026-11-23; listed in `.gitignore`: never commit or push it). The guide's facts: the instrument's forms and resolution
 presets, the measured widths, the recalculation (CSV only), the bin edges; update it when those change.
 
 Icon (2026-11-21): `DLSManager.ico` (16, 24, 32, 48, 64 px, classic BMP frames) is drawn by `examples/make_icon.py` in the style of

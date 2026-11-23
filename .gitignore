@@ -8,3 +8,6 @@ __pycache__/
 *.xlsx
 example data/
 *.lnk
+
+# Horiba's manual, scanned and transcribed for private use: never commit or publish
+SZ100Manual/
