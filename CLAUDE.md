@@ -159,6 +159,20 @@ Diameter axis (2026-11-20): the distribution and cumulative panels use the same 
 instrument's table starts at 0.34 nm and the recomputed grid at 10 nm. The limits are set AGAIN after `_style_figure()`, because PlotStyleKit's style()
 autoscales x tight to the data and would undo them (it ignores a caller's xlim unless the aspect is locked; extending it would touch every host app).
 
+Width forms aligned with the instrument (2026-11-23, after the recalculations below; this REPLACES the earlier Broad / Medium / Narrow
+(x1 / x0.7 / x0.5 of the computed width) and the fourth 'Standard' of 2026-11-20, kept in the paragraphs that follow only as history):
+`DLS_WIDTHS` = As computed | Broad | Standard | Narrow | Manual; `DLS_RESOLUTION_SIGMA` = the measured (resolution, sigma of ln d) points
+(-0.5, 0.43), (0.1, 0.30), (0.3, 0.24), (0.6, 0.07), `dls_resolution_sigma()` interpolates (linear extension beyond, clipped to 0.03-1),
+`DLS_FORM_RESOLUTION` = the manual's Monodisperse presets (Broad -0.5, Standard 0.3, Narrow 0.6), `dls_set_width(d, p, sigma)` rescales the free
+distribution (narrower or wider) around its mean ln d; `_width_sigma()`, `_with_width()`, `_width_note()`, `_on_width()` and the 'Resolution' entry
+(enabled for Manual only; invalid -> 0.3, limited to -1..1). Applied in `_weighted()` to every weighting of the free model, the intensity one included,
+before the tail cut; the peak models are untouched (the instrument's Polydisperse form is their nearest equivalent). `dls_narrow` was removed.
+Tests: `TestWidth`, `TestDlsTab.test_width_selector_*`, `test_manual_resolution_*`. Not checked in the real window after this change (Francesco was
+working in XYplorer on the same screen); the controls were checked in the real window in their earlier form.
+A recalculation by the software produces only a CSV, no new .nsz (Francesco, 2026-11-23): the correlogram, Z-average, PI, cumulants S.D. and count
+rate are identical; for the 450 nm liposomes the stored g1 data are identical and the fits differ by at most 3e-4.
+The test samples moved on 2026-11-23 to LabSpectrumManager's `size da spettro scattering/` folder; `tests/` look there first, then in `spettri di esempio`.
+
 Width selector (2026-11-20, Francesco's idea: treat the computed distribution as 'broad' and offer 'medium' / 'narrow'): `DLS_WIDTHS` = Broad 1 /
 Medium 0.7 / Narrow 0.5, `dls_narrow(d, p, factor)` contracts the free distribution in ln d around its mean ln d (sigma x factor, centre kept),
 applied in `_weighted()` BEFORE the tail cut, to every weighting of the free model, the intensity one included (first version: volume and number only;

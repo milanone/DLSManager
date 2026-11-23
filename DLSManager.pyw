@@ -479,15 +479,20 @@ DLS_TIPS = {
              "whose index excess is the lipid's (0.12, an order-of-magnitude value) averaged over the water gaps. The "
              "diameter is the outer one. The light one vesicle scatters grows about as d^4 at small sizes instead of "
              "d^6. Only used by the 'Mie shell' conversion.",
-    'width': "Free (regularised) distribution only, all weightings. Broad: the distribution as computed. Medium and "
-             "Narrow: it is narrowed in ln d around its centre (width x 0.7 and x 0.5), in intensity and before the "
-             "conversion to volume and number. Standard: the width is set to the one of the instrument's own "
-             "distribution, sigma of ln d = 0.24 for every sample (the instrument, in its Standard / Monodisperse form, "
-             "always shows a peak of that width), whatever the width computed from the data. The regularised inversion smooths and widens the true distribution, and "
-             "volume and number depend strongly on the width, so a narrower distribution gives numbers closer to a "
-             "narrow sample (a latex of 10% CV: number mean 130 nm with Narrow, 90-100 nm with Broad). It is an "
-             "assumption about the sample, not a result: for a truly broad sample (liposomes, aggregates) it narrows "
-             "what is really wide, and the narrowed curve no longer follows the correlogram fit drawn beside it.",
+    'width': "Free (regularised) distribution only, all weightings. As computed: the distribution as the inversion gives it. "
+             "Broad, Standard and Narrow are the forms of the instrument software (Edit > Recalculate, Form of Distribution): "
+             "the instrument shows a peak of a FIXED width whatever the sample (sigma of ln d 0.43, 0.24 and 0.07; its "
+             "resolution -0.5, 0.3 and 0.6), and its own data are always shown in the Standard form. Here the computed "
+             "distribution is given that width around its centre, in intensity and before the conversion to volume and "
+             "number. Manual: a resolution from -1 to 1 (the instrument's own entry), mapped to a width through the four "
+             "points measured on its recalculated tables. The regularised inversion widens a narrow sample, and volume "
+             "and number depend strongly on the width, so a narrow form gives numbers closer to a narrow sample (a "
+             "latex of 10% CV: number mean 130 nm); for a truly broad sample it narrows what is really wide, and the "
+             "curve no longer follows the correlogram fit drawn beside it. The instrument's Polydisperse form allows "
+             "several peaks: the two-peak model is the nearest equivalent.",
+    'resolution': "Manual form only: the instrument's resolution, from -1 to 1 (larger = narrower peak). Presets of its "
+                  "manual: Broad -0.5, Standard 0.3, Narrow 0.6. The width it gives is read from the points measured on "
+                  "the instrument's recalculated size tables (-0.5: 0.43, 0.1: 0.30, 0.3: 0.24, 0.6: 0.07, sigma of ln d).",
     'aperture': "Half-width of the angular range over which the detector collects light, degrees (Mie and Mie shell). "
                 "The light one particle scatters is averaged over the scattering angle +- this value, which washes out "
                 "the narrow interference minima of a single angle; without it, a small tail of the distribution sitting "
@@ -781,21 +786,26 @@ def dls_reweight_weights(d, p, kind, per_particle):
         1.0 if kind == "Intensity" else np.asarray(per_particle, float))
 
 
-DLS_STANDARD_SIGMA = 0.24      # sigma of ln d of the instrument's own distribution (0.22-0.28, mean 0.24, on 29 files)
-# factor on the width (sigma of ln d) of the free distribution; None = the fixed width of the instrument's 'Standard' form
-DLS_WIDTHS = {"Broad": 1.0, "Medium": 0.7, "Narrow": 0.5, "Standard": None}
+# The instrument's own forms (Edit > Recalculate, 'Form of Distribution'): a 'resolution' from -1 to 1 fixes the WIDTH of the peaks it
+# shows, whatever the data (manual: Monodisperse Broad -0.5, Standard 0.3, Narrow 0.6; Polydisperse -0.3, 0.1, 0.3). Measured on its
+# recalculated size tables (sigma of ln d): Monodisperse Broad 0.42-0.45, Standard 0.23-0.25, Narrow 0.07; Polydisperse Standard 0.30 on a
+# latex. Piecewise-linear map through these four points (resolution, sigma), extended linearly beyond them; an interpolation of few
+# points, an assumption outside them.
+DLS_RESOLUTION_SIGMA = ((-0.5, 0.43), (0.1, 0.30), (0.3, 0.24), (0.6, 0.07))
+DLS_FORM_RESOLUTION = {"Broad": -0.5, "Standard": 0.3, "Narrow": 0.6}       # the Monodisperse presets of the manual
+DLS_WIDTHS = ("As computed", "Broad", "Standard", "Narrow", "Manual")
 
 
-def dls_narrow(d, p, factor):
-    """`p` (weights on the log grid `d`) narrowed by `factor` (< 1) in ln d around its mean ln d, then normalised to sum 1:
-    q(ln d) = p(m + (ln d - m) / factor) / factor, so its sigma(ln d) is factor times the original and its centre stays.
-    1 (or more) returns p normalised. The regularised inversion is a smoothed, broad version of the true distribution
-    (on a synthetic 130 +- 14 nm latex it gives sigma 0.31 for a true 0.10), and number and volume depend on the width
-    through about exp(-k sigma^2): narrowing before the conversion is an ASSUMPTION about the sample, not a result."""
-    p = np.asarray(p, float)
-    if factor >= 1:
-        return p / p.sum()
-    return _rescale_width(d, p, factor)
+def dls_resolution_sigma(resolution):
+    """Width (sigma of ln d) of the peak the instrument shows for a resolution setting from -1 to 1 (see DLS_RESOLUTION_SIGMA)."""
+    xs, ys = zip(*DLS_RESOLUTION_SIGMA)
+    if resolution <= xs[0]:
+        s = ys[0] + (ys[1] - ys[0]) / (xs[1] - xs[0]) * (resolution - xs[0])
+    elif resolution >= xs[-1]:
+        s = ys[-1] + (ys[-1] - ys[-2]) / (xs[-1] - xs[-2]) * (resolution - xs[-1])
+    else:
+        s = float(np.interp(resolution, xs, ys))
+    return float(np.clip(s, 0.03, 1.0))
 
 
 def _rescale_width(d, p, factor):
@@ -807,10 +817,12 @@ def _rescale_width(d, p, factor):
     return q / q.sum()
 
 
-def dls_set_width(d, p, sigma=DLS_STANDARD_SIGMA):
-    """`p` given a width (sigma of ln d) of exactly `sigma` around its mean ln d: narrower or wider than computed. This
-    emulates the instrument's 'Standard' form, whose distribution has the same width (about 0.24) for every sample,
-    whatever the polydispersity: an assumption of the instrument, not information about the sample."""
+def dls_set_width(d, p, sigma):
+    """`p` (weights on the log grid `d`) given a width (sigma of ln d) of exactly `sigma` around its mean ln d, narrower or wider
+    than computed, normalised to sum 1. It imitates the instrument's forms, whose distribution has a fixed width (about 0.24 in
+    its Standard form) whatever the polydispersity of the sample: an assumption of the instrument, not information about the
+    sample. The regularised inversion widens a narrow sample (sigma 0.31 for a true 0.10 on a synthetic latex), and number and
+    volume depend on the width through about exp(-k sigma^2)."""
     p = np.asarray(p, float)
     lnd = np.log(np.asarray(d, float))
     m = np.sum(p * lnd) / np.sum(p)
@@ -1266,13 +1278,21 @@ class DLSManager:
         ent.pack(side=tk.LEFT)
         ent.bind("<Return>", lambda e: self._plot_dist())
         self._tips.extend(ToolTip(w, DLS_TIPS['tail']) for w in (lab, ent))
-        lab = tk.Label(ctrl2, text="Width", bg=bg, font=fnt)
+        lab = tk.Label(ctrl2, text="Width (instrument form)", bg=bg, font=fnt)
         lab.pack(side=tk.LEFT, padx=(12, 2))
-        self.dls_width = tk.StringVar(value="Broad")
-        cmb = ttk.Combobox(ctrl2, textvariable=self.dls_width, values=list(DLS_WIDTHS), state="readonly", width=8)
+        self.dls_width = tk.StringVar(value=DLS_WIDTHS[0])
+        cmb = ttk.Combobox(ctrl2, textvariable=self.dls_width, values=list(DLS_WIDTHS), state="readonly", width=11)
         cmb.pack(side=tk.LEFT)
-        cmb.bind("<<ComboboxSelected>>", lambda e: self._plot_dist())
+        cmb.bind("<<ComboboxSelected>>", lambda e: self._on_width())
         self._tips.extend(ToolTip(w, DLS_TIPS['width']) for w in (lab, cmb))
+        lab = tk.Label(ctrl2, text="Resolution", bg=bg, font=fnt, fg="#94A3B8")
+        lab.pack(side=tk.LEFT, padx=(8, 2))
+        self.dls_vars['resolution'] = tk.StringVar(value='0.3')
+        self.ent_resolution = tk.Entry(ctrl2, textvariable=self.dls_vars['resolution'], width=5, state=tk.DISABLED)
+        self.ent_resolution.pack(side=tk.LEFT)
+        self.ent_resolution.bind("<Return>", lambda e: self._plot_dist())
+        self.lab_resolution = lab
+        self._tips.extend(ToolTip(w, DLS_TIPS['resolution']) for w in (lab, self.ent_resolution))
         btn = tk.Button(ctrl2, text="Compute", command=self._plot_dist, bg="#FEF9C3", font=fnt)
         btn.pack(side=tk.LEFT, padx=12)
 
@@ -1837,22 +1857,38 @@ class DLSManager:
                 p = dls_floor(p, self._tail_fraction())
         return dls_reweight(r['d'], p, weight, i1)
 
-    def _width_factor(self):
-        """Factor on the width of the free distribution chosen in the tab (1 = as computed; None = the instrument's
-        fixed width of the 'Standard' choice)."""
-        return DLS_WIDTHS.get(self.dls_width.get(), 1.0)
+    def _width_sigma(self):
+        """sigma of ln d to give the free distribution: the one of the instrument's form chosen in the tab, or of the typed
+        resolution (Manual; invalid -> the Standard 0.3, limited to -1..1); None for 'As computed'."""
+        form = self.dls_width.get()
+        if form == "Manual":
+            try:
+                res = min(max(float(self.dls_vars['resolution'].get()), -1.0), 1.0)
+            except ValueError:
+                res = DLS_FORM_RESOLUTION["Standard"]
+            return dls_resolution_sigma(res)
+        if form in DLS_FORM_RESOLUTION:
+            return dls_resolution_sigma(DLS_FORM_RESOLUTION[form])
+        return None
 
     def _with_width(self, d, p):
         """The free distribution `p` on the grid `d` with the width chosen in the tab."""
-        f = self._width_factor()
-        return dls_set_width(d, p) if f is None else dls_narrow(d, p, f)
+        s = self._width_sigma()
+        return p / p.sum() if s is None else dls_set_width(d, p, s)
 
     def _width_note(self):
-        """Text for the plot summary when the width was changed ('' for Broad)."""
-        f = self._width_factor()
-        if f is None:
-            return f", width fixed at σ(ln d) {DLS_STANDARD_SIGMA:g} as the instrument's Standard (assumption)"
-        return "" if f >= 1 else f", narrowed ×{f:g} in ln d (assumption)"
+        """Text for the plot summary when the width was set ('' for 'As computed')."""
+        s = self._width_sigma()
+        if s is None:
+            return ""
+        return f", width set to σ(ln d) {s:.2f} as the instrument's {self.dls_width.get()} (assumption)"
+
+    def _on_width(self):
+        """Enable the resolution entry only for the Manual form, then redraw."""
+        manual = self.dls_width.get() == "Manual"
+        self.ent_resolution.config(state=tk.NORMAL if manual else tk.DISABLED)
+        self.lab_resolution.config(fg="black" if manual else "#94A3B8")
+        self._plot_dist()
 
     def _particle_index(self, d):
         """Refractive index of the particle: the value typed in the tab, else the one in the file, else 1.59."""

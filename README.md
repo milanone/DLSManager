@@ -123,19 +123,26 @@ remove it: on the 130 nm latex the volume distribution still has a smaller peak 
 and volume means (130 and 134 nm), while the free distribution widens the peak and gives a number mean 27% low: volume and number
 depend on the width of the distribution, which DLS resolves worst.
 
-The instrument's CSV states `Distribution Form: Standard` and `Dispersity: Monodisperse` for every measurement checked, and its
-distribution always has the same width (σ of ln d about 0.24). The fourth *Width* choice, **Standard**, gives the program's
-distribution exactly that width, whatever the data say: on the latex and the 100 nm liposomes the mean, mode and S.D. then agree with the
-instrument's table within about 3% in intensity, volume and number (Mie conversion); on the 450 nm liposomes the instrument's peak
-sits 10-15% higher than the program's, and how it places the peak is not known. It emulates a property of the instrument, not a
-measurement of the sample. The *Width* choice (free distribution only) narrows the computed intensity distribution in ln d around its
-centre, in intensity and before the conversion to volume and number: Broad leaves it as computed, Medium and Narrow multiply its width by 0.7 and 0.5. The regularised
-inversion widens a narrow sample, and volume and number depend on the width through roughly exp(−kσ²). On the latex of the lot certificate
-(number mean 130 nm) Narrow gives number means of 127-136 nm and a single volume peak for four of the files, against 91-106 nm and a
-spurious second volume peak with Broad. It is an assumption about the sample (a truly broad one, such as extruded liposomes with a PI of
-0.4, is narrowed wrongly), shown in the text under the plot, and it is off by default. On the latex 1a400 the S.D. of the intensity
-distribution goes from 71 nm (Broad) to 47 (Medium) and 33 nm (Narrow), against 38 nm for the instrument's; the narrowed curve no longer
-follows the correlogram fit drawn beside it.
+The instrument's software computes its size distribution with a *Form of Distribution* (Edit > Recalculate): Monodisperse or
+Polydisperse, and Broad, Standard, Narrow or a manual *resolution* from -1 to 1 (presets in its manual: Monodisperse -0.5, 0.3,
+0.6; Polydisperse -0.3, 0.1, 0.3). Every measurement checked was in the Monodisperse Standard form (resolution 0.3, stored in the
+file as `Dist_Resolution`). On the size tables that the software recalculated from the same correlogram, the resolution fixes
+the WIDTH of the peak it shows, whatever the sample (σ of ln d 0.43, 0.24 and 0.07 for Broad, Standard and Narrow; the fit of
+the correlogram is equally good in all of them), and Polydisperse allows several peaks: the 450 nm liposomes give two,
+157 nm (39%) and 611 nm (61%), which the program's two-peak model reproduces (172 nm 41%, 588 nm 59%). A recalculation changes
+only the distribution (and its fit curve): Z-average, PI and the correlogram stay the same.
+
+The *Width (instrument form)* choice (free distribution only) gives the computed distribution the width of one of these forms
+around its centre, in intensity and before the conversion to volume and number: *As computed* leaves it as the inversion gives
+it (default), *Broad*, *Standard* and *Narrow* set σ to 0.43, 0.24 and 0.07, and *Manual* takes a resolution (the map from
+resolution to σ goes through the four points measured on the recalculated tables, so it is an interpolation). With Standard on
+the latex and the 100 nm liposomes the mean, mode and S.D. agree with the instrument's table within about 3% in intensity,
+volume and number (Mie conversion); on the 450 nm liposomes the instrument's peak sits 10-15% higher than the program's, and
+how it places the peak is not known. The regularised inversion widens a narrow sample, and volume and number depend on the
+width through roughly exp(−kσ²): on the latex of the lot certificate (number mean 130 nm) a narrow form gives number means of
+127-136 nm and a single volume peak, against 91-106 nm and a spurious second volume peak as computed. These forms are
+assumptions about the sample, not measurements: a truly broad one (extruded liposomes with a PI of 0.4) is narrowed wrongly.
+The choice is shown in the text under the plot, and the narrowed curve no longer follows the correlogram fit drawn beside it.
 
 Volume and number weightings are conversions of the fitted intensity distribution, not measurements. Mie theory is the
 default (homogeneous sphere, no absorption, vertical polarisation; the code reproduces Qext = Qsca and S(0) from an

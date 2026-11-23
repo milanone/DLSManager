@@ -31,7 +31,9 @@ def find_samples():
     is what counts). Pairs whose .nsz cannot be found are left out."""
     import glob
     out = []
-    folders = (DATA, *glob.glob(os.path.join(HERE, "..", "..", "LabSpectrumManager", "spettri di esempio", "*")))
+    lsm = os.path.join(HERE, "..", "..", "LabSpectrumManager")      # the DLS samples moved to 'size da spettro scattering' on 2026-11-23
+    folders = (DATA, *glob.glob(os.path.join(lsm, "size da spettro scattering", "*")),
+               *glob.glob(os.path.join(lsm, "spettri di esempio", "*")))
     for csv_path in sorted(glob.glob(os.path.join(DATA, "*.csv"))):
         with open(csv_path, newline="", encoding="latin-1") as f:
             rows = list(csv.reader(f))

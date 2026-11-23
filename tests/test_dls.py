@@ -147,7 +147,11 @@ class TestRealSample(unittest.TestCase):
                 self.assertEqual(len(r['fit']), 43)
 
 
-LATEX_DIR = os.path.join(HERE, "..", "..", "LabSpectrumManager", "spettri di esempio", "20261119 DLS lattice e liposomi")
+# Francesco moved the DLS samples on 2026-11-23 from 'spettri di esempio' to 'size da spettro scattering' (LabSpectrumManager)
+_LSM = os.path.join(HERE, "..", "..", "LabSpectrumManager")
+_ROOT = next((os.path.join(_LSM, d) for d in ("size da spettro scattering", "spettri di esempio")
+              if os.path.isdir(os.path.join(_LSM, d, "20261119 DLS lattice e liposomi"))), os.path.join(_LSM, "spettri di esempio"))
+LATEX_DIR = os.path.join(_ROOT, "20261119 DLS lattice e liposomi")
 LATEX_173 = [os.path.join(LATEX_DIR, "Polistirene 1a100 in NaCl 10 mM_084%d.nsz" % i) for i in (0, 1, 2)]
 HAS_LATEX = all(os.path.isfile(f) for f in LATEX_173)
 
@@ -323,7 +327,7 @@ class TestWeighting(unittest.TestCase):
         self.assertGreater(mode_v, mode_n)
 
 
-class TestNarrow(unittest.TestCase):
+class TestWidth(unittest.TestCase):
     D = np.geomspace(10, 3000, 400)
 
     def _lognormal(self, median, sigma):
@@ -334,37 +338,35 @@ class TestNarrow(unittest.TestCase):
         lnd = np.log(self.D)
         return float(np.sqrt(np.sum(p * (lnd - np.sum(p * lnd)) ** 2)))
 
-    def test_narrowing_scales_sigma_and_keeps_the_centre(self):
-        p = self._lognormal(150.0, 0.3)
-        for f in (0.7, 0.5):
-            q = nsz.dls_narrow(self.D, p, f)
-            self.assertAlmostEqual(q.sum(), 1.0)
-            self.assertAlmostEqual(self._sigma(q), 0.3 * f, delta=0.005)
-            self.assertAlmostEqual(float(np.exp(np.sum(q * np.log(self.D)))), 150.0, delta=1.5)
-
-    def test_set_width_gives_the_instrument_sigma_to_narrower_and_wider_distributions(self):
+    def test_set_width_gives_the_requested_sigma_to_narrower_and_wider_distributions(self):
         for sigma_in in (0.10, 0.45, 0.72):
-            p = self._lognormal(200.0, sigma_in)
-            q = nsz.dls_set_width(self.D, p)
-            self.assertAlmostEqual(q.sum(), 1.0)
-            self.assertAlmostEqual(self._sigma(q), nsz.DLS_STANDARD_SIGMA, delta=0.01)
-            self.assertAlmostEqual(float(np.exp(np.sum(q * np.log(self.D)))), 200.0, delta=3.0)
-        self.assertIsNone(nsz.DLS_WIDTHS["Standard"])
+            for target in (0.24, 0.43):
+                p = self._lognormal(200.0, sigma_in)
+                q = nsz.dls_set_width(self.D, p, target)
+                self.assertAlmostEqual(q.sum(), 1.0)
+                self.assertAlmostEqual(self._sigma(q), target, delta=0.012)
+                self.assertAlmostEqual(float(np.exp(np.sum(q * np.log(self.D)))), 200.0, delta=3.0)
 
-    def test_factor_one_leaves_the_distribution_alone(self):
-        p = self._lognormal(150.0, 0.3)
-        np.testing.assert_allclose(nsz.dls_narrow(self.D, p, 1.0), p)
+    def test_resolution_map_reproduces_the_measured_widths_and_decreases(self):
+        # the widths read from the instrument's recalculated size tables (sigma of ln d) at the presets of its manual
+        for res, sigma in ((-0.5, 0.43), (0.1, 0.30), (0.3, 0.24), (0.6, 0.07)):
+            self.assertAlmostEqual(nsz.dls_resolution_sigma(res), sigma, places=6)
+        values = [nsz.dls_resolution_sigma(r) for r in np.linspace(-1, 1, 41)]
+        self.assertTrue(all(b <= a + 1e-12 for a, b in zip(values, values[1:])))
+        self.assertTrue(all(0.03 <= v <= 1.0 for v in values))
+        self.assertEqual({k: nsz.dls_resolution_sigma(v) for k, v in nsz.DLS_FORM_RESOLUTION.items()},
+                         {"Broad": 0.43, "Standard": 0.24, "Narrow": 0.07})
 
-    def test_number_mean_of_a_narrow_sample_recovered_by_narrowing_a_broadened_distribution(self):
+    def test_number_mean_of_a_narrow_sample_recovered_by_giving_the_distribution_its_true_width(self):
         # the true number distribution is narrow (sigma 0.10); the regularised inversion gives sigma 0.31 around the same
         # intensity median. Number mean ~ median x exp(-6 sigma^2): 130 with the true width, ~73% of it with the broad one.
         true = self._lognormal(137.0, 0.10)
         broad = self._lognormal(137.0, 0.31)
         n_true = nsz.dls_stats(self.D, nsz.dls_reweight(self.D, true, "Number"))[0]
         n_broad = nsz.dls_stats(self.D, nsz.dls_reweight(self.D, broad, "Number"))[0]
-        n_narrow = nsz.dls_stats(self.D, nsz.dls_reweight(self.D, nsz.dls_narrow(self.D, broad, 0.35), "Number"))[0]
+        n_set = nsz.dls_stats(self.D, nsz.dls_reweight(self.D, nsz.dls_set_width(self.D, broad, 0.10), "Number"))[0]
         self.assertLess(n_broad, 0.75 * n_true)
-        self.assertAlmostEqual(n_narrow, n_true, delta=0.03 * n_true)
+        self.assertAlmostEqual(n_set, n_true, delta=0.03 * n_true)
 
 
 @unittest.skipUnless(HAS_SCIPY, "scipy not installed")
@@ -476,31 +478,46 @@ class TestDlsTab(unittest.TestCase):
         self.app._plot_dls()
         self.assertIn("Rayleigh", self.app.dls_text.get("1.0", "end"))
 
-    def test_width_selector_narrows_every_weighting(self):
+    def sd_of(self):
+        return float(self.app.dls_text.get("1.0", "end").split("S.D. ")[1].split(" nm")[0])
+
+    def test_width_selector_gives_the_instrument_forms_to_every_weighting(self):
         app = self.app
         app.size_source.set("Recomputed"); app.notebook.select(app.tab_size)
         app.dls_model.set(nsz.DLS_MODELS[0])
         app.dls_conv.set("Rayleigh")
-        app.dls_weight.set("Number")
-        app.dls_width.set("Broad")
-        app._plot_dls()
-        broad = app.dls_text.get("1.0", "end")
-        self.assertNotIn("narrowed", broad)
-        app.dls_width.set("Narrow")
-        app._plot_dls()
-        narrow = app.dls_text.get("1.0", "end")
-        self.assertIn("narrowed ×0.5", narrow)
-        s_broad = float(broad.split("S.D. ")[1].split(" nm")[0])
-        s_narrow = float(narrow.split("S.D. ")[1].split(" nm")[0])
-        self.assertLess(s_narrow, s_broad)
-        app.dls_weight.set("Intensity")                                # the intensity distribution narrows as well
-        app.dls_width.set("Broad"); app._plot_dls()
-        i_broad = float(app.dls_text.get("1.0", "end").split("S.D. ")[1].split(" nm")[0])
-        app.dls_width.set("Narrow"); app._plot_dls()
-        text = app.dls_text.get("1.0", "end")
-        self.assertIn("narrowed ×0.5", text)
-        self.assertLess(float(text.split("S.D. ")[1].split(" nm")[0]), 0.7 * i_broad)
-        app.dls_width.set("Broad")
+        for weight in ("Number", "Intensity"):                         # the intensity distribution takes the form as well
+            app.dls_weight.set(weight)
+            app.dls_width.set("As computed"); app._plot_dls()
+            self.assertNotIn("width set", app.dls_text.get("1.0", "end"))
+            computed = self.sd_of()
+            sds = {}
+            for form, sigma in (("Broad", "0.43"), ("Standard", "0.24"), ("Narrow", "0.07")):
+                app.dls_width.set(form); app._plot_dls()
+                self.assertIn("width set to σ(ln d) %s as the instrument's %s" % (sigma, form), app.dls_text.get("1.0", "end"))
+                sds[form] = self.sd_of()
+            self.assertLess(sds["Narrow"], sds["Standard"])
+            if weight == "Intensity":      # in number the S.D. in nm is not monotone: a broad peak also moves to smaller sizes
+                self.assertLess(sds["Standard"], sds["Broad"])
+            self.assertLess(sds["Narrow"], 0.5 * computed)
+        app.dls_width.set("As computed")
+
+    def test_manual_resolution_entry_follows_the_form(self):
+        app = self.app
+        app.size_source.set("Recomputed"); app.notebook.select(app.tab_size)
+        app.dls_weight.set("Intensity")
+        app.dls_width.set("Standard"); app._on_width()
+        self.assertEqual(str(app.ent_resolution.cget("state")), "disabled")
+        app.dls_width.set("Manual"); app.dls_vars['resolution'].set("0.6"); app._on_width()
+        self.assertEqual(str(app.ent_resolution.cget("state")), "normal")
+        self.assertIn("σ(ln d) 0.07 as the instrument's Manual", app.dls_text.get("1.0", "end"))
+        app.dls_vars['resolution'].set("0.3"); app._plot_dls()
+        self.assertIn("σ(ln d) 0.24", app.dls_text.get("1.0", "end"))
+        app.dls_vars['resolution'].set("abc"); app._plot_dls()               # invalid: the Standard resolution
+        self.assertIn("σ(ln d) 0.24", app.dls_text.get("1.0", "end"))
+        app.dls_vars['resolution'].set("5"); self.assertEqual(app._width_sigma(), nsz.dls_resolution_sigma(1.0))
+        app.dls_width.set("As computed"); app._on_width()
+        self.assertEqual(str(app.ent_resolution.cget("state")), "disabled")
 
     def test_both_sources_share_the_diameter_axis(self):
         app = self.app
@@ -516,19 +533,17 @@ class TestDlsTab(unittest.TestCase):
         finally:
             app.size_xscale.set("log"); app.show_cumul.set(False)
 
-    def test_standard_width_is_the_same_for_every_weighting_input(self):
+    def test_standard_form_draws_the_instrument_width(self):
         app = self.app
         app.size_source.set("Recomputed"); app.notebook.select(app.tab_size)
         app.dls_model.set(nsz.DLS_MODELS[0]); app.dls_weight.set("Intensity")
         app.dls_width.set("Standard"); app._plot_dls()
-        text = app.dls_text.get("1.0", "end")
-        self.assertIn("width fixed at σ(ln d) 0.24", text)
         x, y = app.fig_size.axes[1].lines[0].get_data()
         w = np.asarray(y) / np.sum(y)
         lnd = np.log(np.asarray(x))
         m = np.sum(w * lnd)
-        self.assertAlmostEqual(float(np.sqrt(np.sum(w * (lnd - m) ** 2))), nsz.DLS_STANDARD_SIGMA, delta=0.015)
-        app.dls_width.set("Broad")
+        self.assertAlmostEqual(float(np.sqrt(np.sum(w * (lnd - m) ** 2))), 0.24, delta=0.015)
+        app.dls_width.set("As computed")
 
     def test_recomputed_distribution_is_drawn_with_points_like_the_instrument_one(self):
         app = self.app
