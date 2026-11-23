@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Horiba SZ-100: settings and recalculation</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mute:#5b6470;--line:#d7dde4;--acc:#1f5fa8;--side:#f4f7fa}
+@media (prefers-color-scheme:dark){:root{--bg:#14181d;--fg:#e6e9ed;--mute:#9aa5b1;--line:#2c333b;--acc:#7db4f0;--side:#1a2026}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,"Segoe UI",Arial,sans-serif}
+a{color:var(--acc)}
+.wrap{max-width:62rem;margin:0 auto;padding:1.2rem 1.2rem 4rem;display:grid;grid-template-columns:15rem 1fr;gap:2rem}
+nav{position:sticky;top:1rem;align-self:start;font-size:.92rem}
+nav ol{list-style:none;margin:0;padding:0}nav li{margin:.3rem 0}nav a{text-decoration:none}
+h1{font-size:1.5rem;margin:0 0 .3rem}h2{font-size:1.2rem;margin:2rem 0 .4rem;border-top:1px solid var(--line);padding-top:1rem}
+h3{font-size:1rem;margin:1.1rem 0 .2rem}
+p,li{margin:.4rem 0}.lead{color:var(--mute)}
+table{border-collapse:collapse;margin:.6rem 0;font-size:.92rem;width:100%}
+th,td{border:1px solid var(--line);padding:.3rem .5rem;text-align:left;vertical-align:top}th{background:var(--side)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+code{background:var(--side);padding:0 .25rem;border-radius:3px;font-size:.9em}
+.note{border-left:4px solid var(--acc);background:var(--side);padding:.5rem .8rem;margin:.8rem 0}
+@media (max-width:48rem){.wrap{grid-template-columns:1fr}nav{position:static}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+<ol>
+<li><a href="#standard">1. A latex check standard</a></li>
+<li><a href="#setup">2. Settings of a size measurement</a></li>
+<li><a href="#forms">3. Forms of distribution</a></li>
+<li><a href="#advanced">4. Advanced calculation options</a></li>
+<li><a href="#recalc">5. Recalculation and the CSV export</a></li>
+<li><a href="#dlsmanager">6. What DLSManager does with them</a></li>
+<li><a href="#limits">7. What is verified</a></li>
+</ol>
+</nav>
+<main>
+<h1>Horiba SZ-100: settings and recalculation</h1>
+<p class="lead">A short guide written for DLSManager. It summarises, in its own words, the parts of the instrument's Quick Start
+(December 2011) that decide how a <code>.nsz</code> file or a CSV export should be read, and adds what was measured on real files.
+For the procedure in full, with the screens, the original manual is the reference.</p>
+
+<h2 id="standard">1. A latex check standard</h2>
+<p>A nominal 100 nm polystyrene latex is the usual check of the instrument. The salt solution (10 mM NaCl, or another 1:1
+electrolyte, in deionised water) is passed through a 0.1 or 0.2 µm filter first, to take out dust. The stock suspension is about 1%
+v/v: the bottle is mixed, its tip is checked, one drop is discarded, and one drop (about 30 µL) goes into 10 mL of the filtered salt
+solution, which is capped and swirled gently. A suspension in which particles are visible is discarded. One to two millilitres go
+into a clean square cell (1 mL is the minimum).</p>
+
+<h2 id="setup">2. Settings of a size measurement</h2>
+<ul>
+<li><b>Temperature.</b> The temperature control is switched on and set to the measurement temperature (25 °C in the files seen
+here); the sample then needs a few minutes to equilibrate, which is the time to set up the measurement.</li>
+<li><b>Sample.</b> Particle: mono-polystyrene (the factory default) for a latex; dispersion medium: water, or the right medium from
+the list. The viscosity and the refractive index of the medium must be correct: they enter the size.</li>
+<li><b>Measurement.</b> General mode; manual scan of 120 s; 3 consecutive measurements with no delay. The detector position is set
+to manual at 90° (the other choice is 173°, backscattering); the ND filter is automatic.</li>
+<li><b>Cell.</b> The cuvette type is recorded with the measurement and is not used in the analysis.</li>
+<li><b>Calculation.</b> Monodisperse and Standard are the recommended choices for a latex (section 3); the result is calculated on
+the scattered light intensity (section 4).</li>
+<li><b>Saving.</b> Automatic saving after each measurement, with the sample name and sequential numbers. A sample name with a
+character that Windows does not allow in a file name (<code>\ / : * ? " &lt; &gt; |</code>) is not saved.</li>
+</ul>
+
+<h2 id="forms">3. Forms of distribution</h2>
+<p>The size distribution is not a free inversion of the correlogram: the software computes it under a <i>form</i> chosen by the
+user, which fixes the width of what it shows. The form has two parts, and the result can be recalculated later with another one
+(section 5).</p>
+<ul>
+<li><b>Dispersity:</b> <i>Monodisperse</i> (one peak) or <i>Polydisperse</i> (the software may show several peaks).</li>
+<li><b>Width:</b> <i>Broad</i> (for wide distributions), <i>Standard</i> (general use), <i>Narrow</i> (narrow samples, such as a
+polystyrene latex standard) or <i>Manual</i>, a <i>resolution</i> from −1 to 1 typed by the user.</li>
+</ul>
+<table>
+<tr><th>Resolution (manual)</th><th class="n">Broad</th><th class="n">Standard</th><th class="n">Narrow</th></tr>
+<tr><td>Monodisperse</td><td class="n">−0.5</td><td class="n">0.3</td><td class="n">0.6</td></tr>
+<tr><td>Polydisperse</td><td class="n">−0.3</td><td class="n">0.1</td><td class="n">0.3</td></tr>
+</table>
+<p>Measured on size tables that the software recalculated from the same correlograms, the resolution sets the <b>width of the
+peak</b> (σ of ln d), whatever the sample:</p>
+<table>
+<tr><th>Form</th><th class="n">resolution</th><th class="n">σ of ln d</th><th>seen on</th></tr>
+<tr><td>Monodisperse, Broad</td><td class="n">−0.5</td><td class="n">0.42–0.45</td><td>100 nm liposomes, latex</td></tr>
+<tr><td>Polydisperse, Standard</td><td class="n">0.1</td><td class="n">0.24 / 0.30</td><td>100 nm liposomes / latex</td></tr>
+<tr><td>Monodisperse, Standard</td><td class="n">0.3</td><td class="n">0.23–0.25</td><td>29 measurements (every file seen)</td></tr>
+<tr><td>Monodisperse, Narrow</td><td class="n">0.6</td><td class="n">0.07</td><td>latex (3 bins, S.D. 10 nm)</td></tr>
+</table>
+<p>The fit of the correlogram is equally good in all of them (residual about 10⁻³), so the data do not choose the width: a narrow
+or a broad form is an assumption about the sample, and the width shown says nothing about its polydispersity. In the Polydisperse
+form the 450 nm extruded liposomes (PI 0.38) give two peaks, 157 nm (39% of the intensity) and 611 nm (61%), where the Monodisperse
+form gives one peak at about 410 nm.</p>
+<p>The <code>.nsz</code> files store the resolution used as <code>Dist_Resolution</code>: 0.3 in every file seen, i.e. Monodisperse
+Standard.</p>
+
+<h2 id="advanced">4. Advanced calculation options</h2>
+<ul>
+<li><b>Representation of the result:</b> scattered light intensity (the one a measurement is made in), volume or number. Volume and
+number can be converted with the Rayleigh approximation or with Mie theory (the plain or an <i>averaged</i> Mie); the Rayleigh
+conversion is meant for particles of about 100 nm or less.</li>
+<li><b>Threshold q:</b> 5% by default.</li>
+<li><b>Calculation range:</b> 0.15 to 4000 nm (radius).</li>
+<li><b>Channels of the correlation function:</b> automatic for the histogram and for the cumulants, or a chosen range
+(1–41 here). The cumulant range is printed in the exports.</li>
+<li><b>Particles outside the measurement range:</b> their influence is eliminated by default.</li>
+</ul>
+
+<h2 id="recalc">5. Recalculation and the CSV export</h2>
+<p>The software recalculates a stored measurement from <i>Edit → Recalculate</i>, with another form or another basis. The
+correlogram does not change: a recalculation produces <b>only a CSV</b> with the new distribution and its fit, not a new
+<code>.nsz</code>. Z-average, PI, the cumulants' S.D. and the count rate are the same as in the original measurement.</p>
+<p>The CSV holds, in order: the settings (angle, medium, refractive indices, form of distribution and dispersity, representation of
+the result, count rate); the results (area, mean, S.D. and mode of each peak, Z-average, PI, cumulant range); the size table (84
+bins with frequency and undersize); the residual of the fit; and the correlation function with the fit.</p>
+<div class="note">The diameters of the size table are the <b>upper edges</b> of the bins (the bin ratio is 1.1298): the mean stated by
+the software equals the mean computed from the table divided by √1.1298 in every file checked, so its stated mean and mode sit about
+6% below the peak drawn from the table.</div>
+
+<h2 id="dlsmanager">6. What DLSManager does with them</h2>
+<table>
+<tr><th>Instrument</th><th>DLSManager</th></tr>
+<tr><td>Distribution stored in the file (Monodisperse Standard)</td><td>Source <i>Instrument</i>: the table as stored, intensity, volume and
+number by the chosen conversion</td></tr>
+<tr><td>Z-average and PI</td><td>Cumulants of the stored correlogram, shown next to the instrument's (an rms difference of 1.3% in Z-average over
+28 files)</td></tr>
+<tr><td>Forms Broad / Standard / Narrow</td><td>Choice <i>Width</i> of the source <i>Recomputed</i>: the free distribution is given the
+peak width σ of ln d = 0.43 / 0.24 / 0.07; <i>As computed</i> leaves it as the inversion gives it; <i>Manual</i> takes a resolution
+from −1 to 1</td></tr>
+<tr><td>Polydisperse (several peaks)</td><td>The models of one and two log-normal peaks, with the BIC that says whether a second peak is
+supported</td></tr>
+<tr><td>Averaged Mie</td><td>The <i>Aperture</i> entry averages the Mie intensity over an angle range (the instrument's range is not
+given)</td></tr>
+</table>
+
+<h2 id="limits">7. What is verified</h2>
+<ul>
+<li>The widths of the forms, the presets of the manual and the two-peak result come from seven recalculated size tables (latex, 100 nm
+and 450 nm liposomes) and the instrument's dialogs; the map from resolution to width (the <i>Manual</i> choice) is an interpolation
+through four points.</li>
+<li>Not known: the algorithm behind the forms, and which fields of the <code>.nsz</code> a recalculation would change (it does not
+write one).</li>
+<li>The widths are properties of the instrument's presets, not measurements of the sample: for polydispersity, the PI and the
+correlogram itself are the quantities to look at.</li>
+</ul>
+</main>
+</div>
+</body>
+</html>

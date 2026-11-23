@@ -66,6 +66,10 @@ pythonw DLSManager.pyw [file.nsz ...]
 
 `pythonw` starts it without a console window (`python` keeps one).
 
+*Help → SZ-100 settings and recalculation (guide)* opens `docs/sz100_guide.html` in the browser: how a measurement is set up on the
+instrument, what its forms of distribution and its recalculation do, and what is verified. It is a guide written for this program
+from the instrument's Quick Start and from the measurements; it does not reproduce the manual, which is Horiba's.
+
 `DLSManager.ico` is an icon for the program's files in a file manager (drawn by `examples/make_icon.py`, the same style as the
 other programs' icons: a classic 16-64 px ICO).
 

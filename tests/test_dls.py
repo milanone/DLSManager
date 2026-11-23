@@ -533,6 +533,24 @@ class TestDlsTab(unittest.TestCase):
         finally:
             app.size_xscale.set("log"); app.show_cumul.set(False)
 
+    def test_guide_is_next_to_the_program_and_opens_from_the_help_menu(self):
+        from unittest import mock
+        guide = nsz.DLSManager.GUIDE
+        self.assertTrue(os.path.isfile(guide))
+        with open(guide, encoding="utf-8") as f:
+            text = f.read()
+        for anchor in ("standard", "setup", "forms", "advanced", "recalc", "dlsmanager", "limits"):
+            self.assertIn('id="%s"' % anchor, text)
+        self.assertIn("Averaged Mie", text)
+        menus = [self.app.root.nametowidget(self.app.root.cget("menu"))]
+        labels = [menus[0].entrycget(i, "label") for i in range(menus[0].index("end") + 1)
+                  if menus[0].type(i) != "tearoff"]
+        self.assertIn("Help", labels)
+        with mock.patch("webbrowser.open") as opened:
+            self.app.open_guide()
+        opened.assert_called_once()
+        self.assertTrue(opened.call_args[0][0].startswith("file:///") and opened.call_args[0][0].endswith("sz100_guide.html"))
+
     def test_standard_form_draws_the_instrument_width(self):
         app = self.app
         app.size_source.set("Recomputed"); app.notebook.select(app.tab_size)

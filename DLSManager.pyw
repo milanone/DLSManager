@@ -1031,7 +1031,20 @@ class DLSManager:
         m.add_separator()
         m.add_command(label="Exit", command=self.root.destroy)
         bar.add_cascade(label="File", menu=m)
+        hm = tk.Menu(bar, tearoff=0)
+        hm.add_command(label="SZ-100 settings and recalculation (guide)", command=self.open_guide)
+        bar.add_cascade(label="Help", menu=hm)
         self.root.config(menu=bar)
+
+    GUIDE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs", "sz100_guide.html")
+
+    def open_guide(self):
+        """Open the guide to the SZ-100 settings and recalculation (docs/sz100_guide.html, next to the program) in the browser."""
+        if not os.path.isfile(self.GUIDE):
+            messagebox.showinfo("Guide", "The guide is not found next to the program:\n" + self.GUIDE)
+            return
+        import webbrowser
+        webbrowser.open("file:///" + self.GUIDE.replace("\\", "/"))
 
     def _build_ui(self):
         # ── Left sidebar ──────────────────────────────────────────────────────

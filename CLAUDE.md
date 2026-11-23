@@ -25,6 +25,11 @@ the `spettri di esempio` folders of LabSpectrumManager). The earlier sample (`li
 layout, PI 0.6) is gone from the folder; its results are described below. Tk tests need a screen; tests that need the sample are skipped
 without it. The three `screenshot*.png` are the real program with the 0843 file (window grabbed with `CopyFromScreen`, cropped).
 
+Guide (2026-11-23): `docs/sz100_guide.html` (own words, no screenshots, no text of Horiba's manual: the manual is copyrighted and this repository is
+public) opened by Help > 'SZ-100 settings and recalculation (guide)' (`open_guide()`, `DLSManager.GUIDE`, `webbrowser`). A faithful hypertext and a clean PDF of the
+scanned manual exist only in the unpublished folder `progetti/SZ100Manual/` (no git; never push it). The guide's facts: the instrument's forms and resolution
+presets, the measured widths, the recalculation (CSV only), the bin edges; update it when those change.
+
 Icon (2026-11-21): `DLSManager.ico` (16, 24, 32, 48, 64 px, classic BMP frames) is drawn by `examples/make_icon.py` in the style of
 `SpectrumDigitizer.ico` / `plot_editor.ico` (white rounded tile, black axes, orange and blue curves): the correlation decay with its
 points and the narrow distribution peak. Requested by Francesco for XYplorer; the window does not use it (`iconbitmap` is not set).
