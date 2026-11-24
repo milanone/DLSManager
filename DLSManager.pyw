@@ -194,6 +194,65 @@ def load_nsz(path):
     finally:
         ole.close()
 
+def _csv_number(text):
+    """The first number in a cell of the software's CSV ('153.2', '1.590 - 0.000i'), or None for '---' and empty cells."""
+    m = re.match(r"\s*(-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)", text or "")
+    return float(m.group(1)) if m else None
+
+
+def load_csv(path):
+    """Load a CSV export of the SZ-100 software (a measurement exported, or a recalculation: it is the only file a recalculation
+    writes, no new .nsz) as a sample dict shaped like load_nsz(): the size table (its diameters are the bins' upper edges, as in
+    the .nsz), the results, the correlation g1 with its fit and the form of distribution named in the header. The raw
+    correlogram (g2-1 from the first channel) is not in the CSV, so the Recomputed source is unavailable for these samples
+    (dls_record() returns None for 'from_csv'); the correlation is stored as g2-1 = g1^2 like the .nsz one, from the first delay the CSV lists."""
+    with open(path, newline="", encoding="latin-1") as f:
+        rows = [r for r in csv.reader(f)]
+    if not rows or not rows[0] or rows[0][0].strip() != "Display Setting":
+        raise ValueError("not an export of the SZ-100 software")
+    items = {r[0].strip(): r[1].strip() for r in rows if len(r) >= 2 and r[0].strip() and not r[0].strip()[0].isdigit()}
+
+    def table(header):
+        start = next((i for i, r in enumerate(rows) if r and ",".join(r).startswith(header)), None)
+        if start is None:
+            return np.zeros((0, 0))
+        out = []
+        for r in rows[start + 1:]:
+            if not r or not r[0].strip():
+                break
+            out.append([float(x) for x in r])
+        return np.array(out)
+
+    size, corr = table("Diameter (nm)"), table("Delay Time(usec),Correlation")
+    if size.shape[0] < 10 or corr.shape[0] < 8:
+        raise ValueError("the size table or the correlation is missing")
+    g1, fit_g1 = corr[:, 1], corr[:, 2]
+    used = int(np.argmax(fit_g1 == 0)) if np.any(fit_g1 == 0) else len(fit_g1)       # the fit is 0 outside the channels used
+    num = lambda k: _csv_number(items.get(k))
+    date = re.sub(r"^\D+", "", items.get("Date", ""))            # without the weekday ('<weekday> 19 novembre 2026 18:37:34')
+    parts = date.rsplit(" ", 1)
+    form = items.get("Distribution Form"), items.get("Distribution Form(Dispersity)")
+    peak_mode = num("Peak1 Mode")
+    params = {
+        'Sample_Name': items.get("Sample Name", ""),
+        'Date': parts[0] if len(parts) == 2 else date, 'Time': parts[1] if len(parts) == 2 else '',
+        'Lambda_nm': 532.0, 'Angle_deg': num("Scattering Angle"),   # the SZ-100's laser; the CSV does not state it
+        'Temp_C': num("Temperature of the Holder"),
+        'Visc_mPas': num("Dispersion Medium Viscosity"), 'n_solvent': num("Dispersion Medium RI"),
+        'Solvent': items.get("Dispersion Medium Name", ""), 'n_particle': num("Particle Refractive Index"),
+        'Peak1_nm': peak_mode, 'Mode_nm': peak_mode, 'Mean1_nm': num("Peak1 Size (Mean)"), 'AriMean_nm': num("Peak1 Size (Mean)"), 'SD1_nm': num("Peak1 S. D."),
+        'Area1_pct': num("Peak1 S.P.Area Ratio"), 'Mean2_nm': num("Peak2 Size (Mean)"), 'Peak2_nm': num("Peak2 Mode"),
+        'ZAvg_nm': num("Z-Average"), 'PDI': num("PI"), 'CumSD_nm': num("Cumulants S. D."),
+        'FormText': ", ".join(x for x in (form[1], form[0]) if x) or None,         # 'Monodisperse, Narrow', as the header says
+        'Representation': items.get("Representation of Result"),
+    }
+    return {
+        'path': path, 'name': os.path.splitext(os.path.basename(path))[0],
+        'tau': corr[:, 0], 'acf': g1 ** 2, 'fit': fit_g1[:used] ** 2, 'resid': [], 'fit_offset': 0, 'tau_aligned': True,
+        'sz': size[:, 0], 'intens': size[:, 1], 'cumul': size[:, 2], 'params': params, 'from_csv': True,
+    }
+
+
 def _nsz_correlogram(ole):
     """(delay times in µs, normalised g2-1) from the float32 arrays 'Delay' (seconds) and 'OriginalACF', or None.
     Each array sits in one stream, preceded by its byte length (u32) and its key name; the ACF has a few junk values
@@ -875,7 +934,7 @@ def dls_record(d):
     are not matched to the channels."""
     p = d['params']
     keys = ('Angle_deg', 'n_solvent', 'Visc_mPas', 'Temp_C')
-    if not d.get('tau_aligned') or any(p.get(k) is None for k in keys) or len(d['tau']) < 8:
+    if not d.get('tau_aligned') or d.get('from_csv') or any(p.get(k) is None for k in keys) or len(d['tau']) < 8:
         return None
     rec = {'tau': d['tau'] * 1e-6, 'acf': d['acf'], 'angle': p['Angle_deg'], 'n': p['n_solvent'],
            'visc': p['Visc_mPas'], 'T': p['Temp_C']}
@@ -1225,7 +1284,7 @@ class DLSManager:
     def _build_menu(self):
         bar = tk.Menu(self.root)
         m = tk.Menu(bar, tearoff=0)
-        m.add_command(label="Open .nsz files...", command=self._open_files)
+        m.add_command(label="Open .nsz / .csv files...", command=self._open_files)
         m.add_command(label="Open folder...", command=self._open_folder)
         m.add_command(label="Export Excel...", command=self._export_xlsx)
         m.add_separator()
@@ -1271,7 +1330,7 @@ class DLSManager:
         btn_frame.pack(fill=tk.X, padx=10, pady=(0,10))
 
         for text, cmd in [
-            ("＋  Open .nsz files", self._open_files),
+            ("＋  Open .nsz / .csv files", self._open_files),
             ("📁  Open folder",  self._open_folder),
             ("🗑  Remove selected",   self._remove_selected),
             ("💾  Export Excel",  self._export_xlsx),
@@ -1285,7 +1344,7 @@ class DLSManager:
 
         # Drag & drop zone
         drop_lbl = tk.Label(sidebar,
-            text="⬇ Drop .nsz files here",
+            text="⬇ Drop .nsz / .csv files here",
             font=("Helvetica", 9), fg="#64748B", bg="#1E293B",
             pady=10)
         drop_lbl.pack(fill=tk.X, padx=10)
@@ -1596,7 +1655,7 @@ class DLSManager:
         paths = self.root.tk.splitlist(raw)
         nsz_files = []
         for p in paths:
-            if os.path.isfile(p) and p.lower().endswith('.nsz'):
+            if os.path.isfile(p) and p.lower().endswith(('.nsz', '.csv')):
                 nsz_files.append(p)
             elif os.path.isdir(p):
                 for f in os.listdir(p):
@@ -1608,8 +1667,9 @@ class DLSManager:
 
     def _open_files(self):
         files = filedialog.askopenfilenames(
-            title="Open NSZ files",
-            filetypes=[("Horiba NSZ", "*.nsz"), ("All Files", "*.*")])
+            title="Open NSZ files or CSV exports",
+            filetypes=[("Horiba NSZ and CSV exports", "*.nsz *.csv"), ("Horiba NSZ", "*.nsz"), ("CSV export", "*.csv"),
+                       ("All Files", "*.*")])
         self._load_files(files)
 
     def _open_folder(self):
@@ -1628,7 +1688,7 @@ class DLSManager:
             if path in self.samples:
                 continue
             try:
-                data = load_nsz(path)
+                data = load_csv(path) if path.lower().endswith('.csv') else load_nsz(path)
                 self.samples[path] = data
                 short = os.path.basename(path)
                 self.listbox.insert(tk.END, short)
@@ -2217,8 +2277,8 @@ class DLSManager:
         ("Viscosity (mPas)", 'Visc_mPas', "Entered: viscosity of the dispersion medium; it enters every size"),
         ("Solvent n", 'n_solvent', "Entered: refractive index of the dispersion medium"),
         ("Solvent", 'Solvent', "Entered: name of the dispersion medium chosen in the software"),
-        ("Form of distribution", 'FORM', "Entered: form chosen in the software (dispersity and width); it fixes the histogram's width"),
-        ("Resolution", 'Resolution', "Entered: the number behind the width of the form (Monodisperse: Broad -0.5, Standard 0.3, Narrow 0.6)"),
+        ("Form of distribution", 'FORM', "Entered: form chosen in the software (dispersity, width); it fixes the histogram's width"),
+        ("Resolution", 'Resolution', "Entered: the number behind the width (Monodisperse: Broad -0.5, Standard 0.3, Narrow 0.6); only in the .nsz"),
         ("── Cumulants ──", None, ""),
         ("Z-Average (nm)", 'ZAvg_nm', "Cumulants: mean size weighted by intensity, from the decay rate of the correlogram"),
         ("PDI", 'PDI', "Cumulants: relative width of the decay rates (the PI): the polydispersity of the sample"),
@@ -2256,7 +2316,7 @@ class DLSManager:
             if label == "Date / Time":
                 v, origin = f"{params.get('Date','')} {params.get('Time','')}", "Stored by the software when the measurement was made"
             elif key == 'FORM':
-                v = dls_form_name(params.get('Dispersity'), params.get('Resolution'))
+                v = params.get('FormText') or dls_form_name(params.get('Dispersity'), params.get('Resolution'))
             else:
                 v = params.get(key)
             self.tree.insert("", tk.END, values=(label, str(v) if v is not None else "—", origin),
@@ -2582,7 +2642,7 @@ def main():
 
     # If files are passed on the command line, load them
     if len(sys.argv) > 1:
-        files = [a for a in sys.argv[1:] if a.lower().endswith('.nsz')]
+        files = [a for a in sys.argv[1:] if a.lower().endswith(('.nsz', '.csv'))]
         if files:
             app._load_files(files)
 

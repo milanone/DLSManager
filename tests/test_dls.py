@@ -327,6 +327,68 @@ class TestWeighting(unittest.TestCase):
         self.assertGreater(mode_v, mode_n)
 
 
+RECALC_DIR = os.path.join(HERE, "..", "..", "LabSpectrumManager", "size da spettro scattering", "ricalcoli")
+
+
+class TestRecalculationCsv(unittest.TestCase):
+    """CSV exports of recalculations (no .nsz is written by a recalculation): the form of distribution is named in the header."""
+    FORMS = {"broad_001": "Monodisperse, Broad", "narrow_002": "Monodisperse, Narrow", "std_003": "Polydisperse, Standard",
+             "broad_005": "Polydisperse, Broad", "std_004": "Polydisperse, Standard", "broad_006": "Monodisperse, Broad",
+             "std_007": "Polydisperse, Standard"}
+
+    def files(self):
+        import glob
+        return sorted(glob.glob(os.path.join(RECALC_DIR, "*.csv")))
+
+    def test_form_and_values_are_read_from_the_header(self):
+        files = self.files()
+        if not files:
+            self.skipTest("recalculation CSVs not present")
+        for f in files:
+            d = nsz.load_csv(f)
+            key = next(k for k in self.FORMS if os.path.basename(f).endswith(k + ".csv"))
+            self.assertEqual(d['params']['FormText'], self.FORMS[key], f)
+            p = d['params']
+            self.assertEqual(len(d['sz']), 84)
+            self.assertAlmostEqual(float(d['cumul'][-1]), 100.0, delta=0.01)
+            self.assertAlmostEqual(p['CumSD_nm'], p['ZAvg_nm'] * p['PDI'] ** 0.5, delta=0.1)       # Z x sqrt(PI) in the CSV too
+            self.assertIsNone(nsz.dls_record(d))                          # no raw correlogram: nothing to recompute
+            self.assertGreater(len(d['fit']), 10)
+
+    def test_a_csv_that_is_not_an_export_is_refused(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as f:
+            f.write("a,b\n1,2\n")
+        try:
+            with self.assertRaises(ValueError):
+                nsz.load_csv(f.name)
+        finally:
+            os.remove(f.name)
+
+    def test_csv_opens_in_the_application(self):
+        files = self.files()
+        if not files:
+            self.skipTest("recalculation CSVs not present")
+        import tkinter as tk
+        try:
+            root = nsz.TkinterDnD.Tk() if nsz.DND_AVAILABLE else tk.Tk()
+        except tk.TclError as e:
+            self.skipTest("Tk not available: %s" % e)
+        root.withdraw()
+        try:
+            app = nsz.DLSManager(root)
+            narrow = next(f for f in files if f.endswith("narrow_002.csv"))
+            app._load_files([narrow]); root.update()
+            rows = {app.tree.item(i, "values")[0]: app.tree.item(i, "values") for i in app.tree.get_children()}
+            self.assertEqual(rows["Form of distribution"][1], "Monodisperse, Narrow")
+            self.assertEqual(rows["Resolution"][1], "—")                 # only a .nsz stores the resolution
+            app.notebook.select(app.tab_size); root.update()
+            self.assertGreater(len(app.fig_size.axes[0].lines), 1)             # the correlogram and its fit are drawn
+            app.size_source.set("Recomputed"); app._on_source(); root.update()  # no correlogram to recompute: a message, no error
+        finally:
+            root.destroy()
+
+
 class TestWidth(unittest.TestCase):
     def test_form_name_from_the_stored_resolution(self):
         f = nsz.dls_form_name

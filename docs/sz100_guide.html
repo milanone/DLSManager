@@ -156,6 +156,9 @@ correlogram does not change: a recalculation produces <b>only a CSV</b> with the
 <p>The CSV holds, in order: the settings (angle, medium, refractive indices, form of distribution and dispersity, representation of
 the result, count rate); the results (area, mean, S.D. and mode of each peak, Z-average, PI, cumulant range); the size table (84
 bins with frequency and undersize); the residual of the fit; and the correlation function with the fit.</p>
+<p>The form used by a recalculation is named only in this CSV (<i>Distribution Form</i> and <i>Distribution Form(Dispersity)</i>
+in its header). DLSManager opens these CSV files like a <code>.nsz</code>: the correlation with its fit, the size table, the results
+and the form are shown. The raw correlogram is not in the CSV, so the <i>Recomputed</i> source is not available for it.</p>
 <div class="note">The diameters of the size table are the <b>upper edges</b> of the bins (the bin ratio is 1.1298): the mean stated by
 the software equals the mean computed from the table divided by √1.1298, so its stated mean and mode sit about
 6% below the peak drawn from the table.</div>
@@ -163,7 +166,8 @@ the software equals the mean computed from the table divided by √1.1298, so it
 <h2 id="dlsmanager">7. What DLSManager does with them</h2>
 <table>
 <tr><th>Instrument</th><th>DLSManager</th></tr>
-<tr><td>Distribution stored in the file (Monodisperse Standard)</td><td>Source <i>Instrument</i>: the table as stored, intensity, volume and
+<tr><td>Recalculation (CSV export)</td><td>Opened like a <code>.nsz</code>, with the form read from its header</td></tr>
+<tr><td>Distribution stored in the file (the form of the measurement)</td><td>Source <i>Instrument</i>: the table as stored, intensity, volume and
 number by the chosen conversion</td></tr>
 <tr><td>Z-average and PI</td><td>Cumulants of the stored correlogram, shown next to the instrument's</td></tr>
 <tr><td>Forms Broad / Standard / Narrow</td><td>Choice <i>Width</i> of the source <i>Recomputed</i>: the free distribution is given the

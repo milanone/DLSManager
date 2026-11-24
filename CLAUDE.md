@@ -36,6 +36,8 @@ points and the narrow distribution peak. Requested by Francesco for XYplorer; th
 
 ## Architecture
 
+CSV exports (2026-11-24, Francesco's request: a recalculation writes only a CSV, so the form of a recalculation is visible only there): `load_csv()` reads the software's CSV into the same sample dict (size table = bin upper edges like the .nsz, g1 squared stored as g2-1 with the fit over the channels it used, results, `params['FormText']` = 'Monodisperse, Narrow' from the header), `from_csv` True and `dls_record()` None (no raw correlogram: Recomputed unavailable); opened from Open files / drag and drop / command line (a dropped or opened FOLDER still gives only its .nsz, so an export is not duplicated next to its .nsz). D10/D50/D90, median, span and the resolution are not in the CSV. Tests `TestRecalculationCsv`.
+
 Parameters tab (2026-11-24; rows 'Form of distribution' and 'Resolution' added the same day, from `Dist_Resolution` and `MeasDispersityMode`, `dls_form_name()`: Monodisperse Standard in all 29 files; a non-zero dispersity code is reported as a code, never guessed): three columns, Parameter / Value (first selected sample) / Where it comes from (`PARAM_ROWS`: measured, entered, cumulants, histogram). `params['CumSD_nm']` = `Cum_fStd` x 2 = Z-average x sqrt(PI) exactly in the 28 files that carry cumulants (checked 2026-11-24); `Mean1_nm` equals `AriMean_nm`, `Peak1_nm` equals `Mode_nm`. A width taken from the PI (sigma = sqrt(PI)) was tried on the 29 files and does not beat the Standard width (median error of the number mean vs the instrument's table 12-17% against 3.8%).
 
 Single file `DLSManager.pyw`: parser functions (`f32`, `parse_props`, `load_nsz` / `_read_nsz`, `dump_nsz` for
