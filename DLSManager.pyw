@@ -2222,7 +2222,7 @@ class DLSManager:
         ("── Cumulants ──", None, ""),
         ("Z-Average (nm)", 'ZAvg_nm', "Cumulants: mean size weighted by intensity, from the decay rate of the correlogram"),
         ("PDI", 'PDI', "Cumulants: relative width of the decay rates (the PI): the polydispersity of the sample"),
-        ("Cumulants S.D. (nm)", 'CumSD_nm', "Cumulants: Z-average x sqrt(PI), exactly (every file checked); not a separate result"),
+        ("Cumulants S.D. (nm)", 'CumSD_nm', "Cumulants: Z-average x sqrt(PI), exactly; not a separate result"),
         ("── Histogram ──", None, ""),
         ("Peak 1 (nm)", 'Peak1_nm', "Histogram: size of the highest bin (= the mode). Its width is set by the form, not by the PDI"),
         ("Mean 1 (nm)", 'Mean1_nm', "Histogram: mean of the size table; its position is near the Z-average"),

@@ -53,8 +53,7 @@ into a clean square cell (1 mL is the minimum).</p>
 
 <h2 id="setup">2. Settings of a size measurement</h2>
 <ul>
-<li><b>Temperature.</b> The temperature control is switched on and set to the measurement temperature (25 °C in the files seen
-here); the sample then needs a few minutes to equilibrate, which is the time to set up the measurement.</li>
+<li><b>Temperature.</b> The temperature control is switched on and set to the measurement temperature (25 °C is usual); the sample then needs a few minutes to equilibrate, which is the time to set up the measurement.</li>
 <li><b>Sample.</b> Particle: mono-polystyrene (the factory default) for a latex; dispersion medium: water, or the right medium from
 the list. The viscosity and the refractive index of the medium must be correct: they enter the size.</li>
 <li><b>Measurement.</b> General mode; manual scan of 120 s; 3 consecutive measurements with no delay. The detector position is set
@@ -85,17 +84,16 @@ volume</td></tr>
 <p>The decay rate of the correlogram gives the diffusion coefficient D = Γ/q², with q the scattering vector, and the size follows from
 the Stokes–Einstein relation d = kT / (3πηD). The <b>Z-average</b> is the mean size obtained this way, weighted by the scattered
 intensity; the <b>PI</b> is the relative width of the decay rates. The <b>Cumulants S.D.</b> is not a separate result: it equals
-Z-average × √PI, exactly, in all 28 files that carry the cumulants and in the CSV exports checked (the 29th file is a blank with no
-sample).</p>
+Z-average × √PI, exactly.</p>
 <h3>The histogram</h3>
 <p>Mean, S.D., Mode and the percentiles are the statistics of the plotted table, calculated like those of any table. Its width is set
 by the form (section 4), not by the PI: the S.D. of the histogram is about a quarter of its mean whatever the sample, while the
-Cumulants S.D. follows the PI. Its position stays near the Z-average (ratio 1.02–1.09 in the files seen, 1.38 for the broad 450 nm
-liposomes); the rule that places it was not reconstructed.</p>
+Cumulants S.D. follows the PI. Its position stays near the Z-average, a little above it, and further above it for a broad sample; the rule that places it is not
+known.</p>
 <div class="note">Two standard deviations are therefore printed: the one of the cumulants (from the PI, a measurement of the width of the
 decay) and the one of the histogram (from the form, an assumption). For polydispersity the PI and the Cumulants S.D. are the
-quantities to read. A width taken from the PI instead of the form (σ = √PI) was tried on the 29 files: it does not approach the
-instrument's volume and number, nor the 130 nm latex, better than the Standard form.</div>
+quantities to read. A width taken from the PI instead of the form (σ = √PI) was tried: it does not approach the instrument's volume
+and number, nor the true size of a latex standard, better than the Standard form.</div>
 
 <h3>The recomputed distribution and its S.D.</h3>
 <p>The source <i>Recomputed</i> of DLSManager inverts the stored correlogram itself, without the instrument's forms. Its mean and S.D.
@@ -103,11 +101,10 @@ are those of the table of the distribution: with weights <i>p</i> on a grid of 1
 3000 nm, the mean is Σ(d·p) / Σp and the S.D. is √[ Σ p·(d − mean)² / Σp ], in nm. They are given in the weighting chosen (intensity,
 volume or number), after the width chosen in <i>Width</i> and the tail cut; for the models of one or two peaks they are those of the sum
 of the peaks on the grid.</p>
-<p>The width of this distribution is the one the data allow: it follows the PI (over 28 files the relative S.D., S.D./mean, correlates
-0.96 with √PI of the program's own cumulants, and 0.71 with the instrument's), but it is not tied to it by a formula. The regularised
-inversion tends to widen a narrow sample, so its S.D. is usually a little above √PI × mean (median relative S.D. 0.39 against √PI 0.34).
-The instrument's histogram in the Monodisperse Standard form has instead a relative S.D. of about 0.23–0.27 whatever the PI, so the two
-S.D. printed under a plot can differ by a factor of 1.5 (for instance 62 against 38 nm): choosing <i>Width</i> = Standard sets the
+<p>The width of this distribution is the one the data allow: it follows the PI closely (the relative S.D., S.D./mean, is nearly proportional to √PI of the
+program's own cumulants, less so to the instrument's), but it is not tied to it by a formula. The regularised inversion tends to widen
+a narrow sample, so its S.D. is usually a little above √PI × mean. The instrument's histogram in the Monodisperse Standard form has
+instead a relative S.D. of about a quarter whatever the PI, so the two S.D. printed under a plot can differ noticeably: choosing <i>Width</i> = Standard sets the
 recomputed one to the instrument's width. The program does not recompute the cumulants' S.D.; it is only shown for the instrument
 (<i>Parameters</i> tab).</p>
 
@@ -128,18 +125,17 @@ polystyrene latex standard) or <i>Manual</i>, a <i>resolution</i> from −1 to 1
 <p>Measured on size tables that the software recalculated from the same correlograms, the resolution sets the <b>width of the
 peak</b> (σ of ln d), whatever the sample:</p>
 <table>
-<tr><th>Form</th><th class="n">resolution</th><th class="n">σ of ln d</th><th>seen on</th></tr>
-<tr><td>Monodisperse, Broad</td><td class="n">−0.5</td><td class="n">0.42–0.45</td><td>100 nm liposomes, latex</td></tr>
-<tr><td>Polydisperse, Standard</td><td class="n">0.1</td><td class="n">0.24 / 0.30</td><td>100 nm liposomes / latex</td></tr>
-<tr><td>Monodisperse, Standard</td><td class="n">0.3</td><td class="n">0.23–0.25</td><td>29 measurements (every file seen)</td></tr>
-<tr><td>Monodisperse, Narrow</td><td class="n">0.6</td><td class="n">0.07</td><td>latex (3 bins, S.D. 10 nm)</td></tr>
+<tr><th>Form</th><th class="n">resolution</th><th class="n">σ of ln d</th></tr>
+<tr><td>Monodisperse, Broad</td><td class="n">−0.5</td><td class="n">0.42–0.45</td></tr>
+<tr><td>Polydisperse, Standard</td><td class="n">0.1</td><td class="n">0.24–0.30</td></tr>
+<tr><td>Monodisperse, Standard</td><td class="n">0.3</td><td class="n">0.23–0.25</td></tr>
+<tr><td>Monodisperse, Narrow</td><td class="n">0.6</td><td class="n">0.07</td></tr>
 </table>
 <p>The fit of the correlogram is equally good in all of them (residual about 10⁻³), so the data do not choose the width: a narrow
 or a broad form is an assumption about the sample, and the width shown says nothing about its polydispersity. In the Polydisperse
-form the 450 nm extruded liposomes (PI 0.38) give two peaks, 157 nm (39% of the intensity) and 611 nm (61%), where the Monodisperse
-form gives one peak at about 410 nm.</p>
-<p>The <code>.nsz</code> files store the resolution used as <code>Dist_Resolution</code>: 0.3 in every file seen, i.e. Monodisperse
-Standard.</p>
+form a broad or bimodal sample (a high PI) can give two peaks, where the Monodisperse form always gives one.</p>
+<p>The <code>.nsz</code> files store the resolution used as <code>Dist_Resolution</code>: 0.3 is Monodisperse
+Standard, the usual choice.</p>
 
 <h2 id="advanced">5. Advanced calculation options</h2>
 <ul>
@@ -161,7 +157,7 @@ correlogram does not change: a recalculation produces <b>only a CSV</b> with the
 the result, count rate); the results (area, mean, S.D. and mode of each peak, Z-average, PI, cumulant range); the size table (84
 bins with frequency and undersize); the residual of the fit; and the correlation function with the fit.</p>
 <div class="note">The diameters of the size table are the <b>upper edges</b> of the bins (the bin ratio is 1.1298): the mean stated by
-the software equals the mean computed from the table divided by √1.1298 in every file checked, so its stated mean and mode sit about
+the software equals the mean computed from the table divided by √1.1298, so its stated mean and mode sit about
 6% below the peak drawn from the table.</div>
 
 <h2 id="dlsmanager">7. What DLSManager does with them</h2>
@@ -169,8 +165,7 @@ the software equals the mean computed from the table divided by √1.1298 in eve
 <tr><th>Instrument</th><th>DLSManager</th></tr>
 <tr><td>Distribution stored in the file (Monodisperse Standard)</td><td>Source <i>Instrument</i>: the table as stored, intensity, volume and
 number by the chosen conversion</td></tr>
-<tr><td>Z-average and PI</td><td>Cumulants of the stored correlogram, shown next to the instrument's (an rms difference of 1.3% in Z-average over
-28 files)</td></tr>
+<tr><td>Z-average and PI</td><td>Cumulants of the stored correlogram, shown next to the instrument's</td></tr>
 <tr><td>Forms Broad / Standard / Narrow</td><td>Choice <i>Width</i> of the source <i>Recomputed</i>: the free distribution is given the
 peak width σ of ln d = 0.43 / 0.24 / 0.07; <i>As computed</i> leaves it as the inversion gives it; <i>Manual</i> takes a resolution
 from −1 to 1</td></tr>
@@ -182,8 +177,8 @@ given)</td></tr>
 
 <h2 id="limits">8. What is verified</h2>
 <ul>
-<li>The widths of the forms, the presets of the manual and the two-peak result come from seven recalculated size tables (latex, 100 nm
-and 450 nm liposomes) and the instrument's dialogs; the map from resolution to width (the <i>Manual</i> choice) is an interpolation
+<li>The widths of the forms, the presets of the manual and the two-peak result were measured on size tables that the software recalculated
+from stored correlograms (a latex standard and liposomes) and on the instrument's dialogs; the map from resolution to width (the <i>Manual</i> choice) is an interpolation
 through four points.</li>
 <li>Not known: the algorithm behind the forms, and which fields of the <code>.nsz</code> a recalculation would change (it does not
 write one).</li>
