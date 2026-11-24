@@ -97,6 +97,20 @@ decay) and the one of the histogram (from the form, an assumption). For polydisp
 quantities to read. A width taken from the PI instead of the form (σ = √PI) was tried on the 29 files: it does not approach the
 instrument's volume and number, nor the 130 nm latex, better than the Standard form.</div>
 
+<h3>The recomputed distribution and its S.D.</h3>
+<p>The source <i>Recomputed</i> of DLSManager inverts the stored correlogram itself, without the instrument's forms. Its mean and S.D.
+are those of the table of the distribution: with weights <i>p</i> on a grid of 100 diameters <i>d</i> equally spaced in ln d from 10 to
+3000 nm, the mean is Σ(d·p) / Σp and the S.D. is √[ Σ p·(d − mean)² / Σp ], in nm. They are given in the weighting chosen (intensity,
+volume or number), after the width chosen in <i>Width</i> and the tail cut; for the models of one or two peaks they are those of the sum
+of the peaks on the grid.</p>
+<p>The width of this distribution is the one the data allow: it follows the PI (over 28 files the relative S.D., S.D./mean, correlates
+0.96 with √PI of the program's own cumulants, and 0.71 with the instrument's), but it is not tied to it by a formula. The regularised
+inversion tends to widen a narrow sample, so its S.D. is usually a little above √PI × mean (median relative S.D. 0.39 against √PI 0.34).
+The instrument's histogram in the Monodisperse Standard form has instead a relative S.D. of about 0.23–0.27 whatever the PI, so the two
+S.D. printed under a plot can differ by a factor of 1.5 (for instance 62 against 38 nm): choosing <i>Width</i> = Standard sets the
+recomputed one to the instrument's width. The program does not recompute the cumulants' S.D.; it is only shown for the instrument
+(<i>Parameters</i> tab).</p>
+
 <h2 id="forms">4. Forms of distribution</h2>
 <p>The size distribution is not a free inversion of the correlogram: the software computes it under a <i>form</i> chosen by the
 user, which fixes the width of what it shows. The form has two parts, and the result can be recalculated later with another one

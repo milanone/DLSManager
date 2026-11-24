@@ -557,6 +557,7 @@ class TestDlsTab(unittest.TestCase):
         body = win.text.get("1.0", "end")
         self.assertIn("Quantities: where they come from", body)
         self.assertIn("Z-average × √PI", body)
+        self.assertIn("The recomputed distribution and its S.D.", body)
         self.assertEqual(win.contents.size(), len(win.sections))
         self.assertGreaterEqual(win.contents.size(), 8)
         self.app.open_guide()                                           # a second call reuses the window
