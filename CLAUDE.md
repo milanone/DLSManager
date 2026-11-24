@@ -36,7 +36,7 @@ points and the narrow distribution peak. Requested by Francesco for XYplorer; th
 
 ## Architecture
 
-Parameters tab (2026-11-24): three columns, Parameter / Value (first selected sample) / Where it comes from (`PARAM_ROWS`: measured, entered, cumulants, histogram). `params['CumSD_nm']` = `Cum_fStd` x 2 = Z-average x sqrt(PI) exactly in the 28 files that carry cumulants (checked 2026-11-24); `Mean1_nm` equals `AriMean_nm`, `Peak1_nm` equals `Mode_nm`. A width taken from the PI (sigma = sqrt(PI)) was tried on the 29 files and does not beat the Standard width (median error of the number mean vs the instrument's table 12-17% against 3.8%).
+Parameters tab (2026-11-24; rows 'Form of distribution' and 'Resolution' added the same day, from `Dist_Resolution` and `MeasDispersityMode`, `dls_form_name()`: Monodisperse Standard in all 29 files; a non-zero dispersity code is reported as a code, never guessed): three columns, Parameter / Value (first selected sample) / Where it comes from (`PARAM_ROWS`: measured, entered, cumulants, histogram). `params['CumSD_nm']` = `Cum_fStd` x 2 = Z-average x sqrt(PI) exactly in the 28 files that carry cumulants (checked 2026-11-24); `Mean1_nm` equals `AriMean_nm`, `Peak1_nm` equals `Mode_nm`. A width taken from the PI (sigma = sqrt(PI)) was tried on the 29 files and does not beat the Standard width (median error of the number mean vs the instrument's table 12-17% against 3.8%).
 
 Single file `DLSManager.pyw`: parser functions (`f32`, `parse_props`, `load_nsz` / `_read_nsz`, `dump_nsz` for
 debugging) and the class `DLSManager` (sidebar with sample list, a `ttk.Notebook` with Autocorrelogram /

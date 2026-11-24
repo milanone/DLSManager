@@ -459,6 +459,8 @@ class TestApplication(unittest.TestCase):
         _items = read_software_csv(SAMPLE_CSV)[0]
         self.assertAlmostEqual(float(rows["Z-Average (nm)"][1]), float(_items["Z-Average"]), delta=0.06)
         self.assertAlmostEqual(float(rows["PDI"][1]), float(_items["PI"]), delta=0.0006)
+        self.assertEqual(rows["Form of distribution"][1], "Monodisperse, Standard")      # the CSV: Standard, Monodisperse
+        self.assertEqual(rows["Resolution"][1], "0.3")
         self.app._load_files([SAMPLE])                                          # same file again: ignored
         self.assertEqual(self.app.listbox.size(), 1)
 

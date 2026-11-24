@@ -386,6 +386,8 @@ def _read_nsz(path, ole):
         'Median_nm':pv(p1, 'CalcMedian', 2.0),
         'ZAvg_nm':  pv(p1, 'Cum_fMean',  2.0),
         'PDI':      pv(p1, 'Cum_fPi'),          # Cum_fPi = the correct PDI
+        'Resolution': pv(p1, 'Dist_Resolution'),   # 0.3 in every file seen (Monodisperse Standard)
+        'Dispersity': pv(p34, 'MeasDispersityMode'),   # 0 = Monodisperse (the only value seen)
         'CumSD_nm': pv(p1, 'Cum_fStd',   2.0),  # = Z-average x sqrt(PI) exactly (28 files); a radius, x2
         'Span':     pv(p1, 'CalcSpan'),
         'GeoMean_nm': pv(p1, 'CalcGeoMean', 2.0),
@@ -795,7 +797,23 @@ def dls_reweight_weights(d, p, kind, per_particle):
 # points, an assumption outside them.
 DLS_RESOLUTION_SIGMA = ((-0.5, 0.43), (0.1, 0.30), (0.3, 0.24), (0.6, 0.07))
 DLS_FORM_RESOLUTION = {"Broad": -0.5, "Standard": 0.3, "Narrow": 0.6}       # the Monodisperse presets of the manual
+DLS_POLY_RESOLUTION = {"Broad": -0.3, "Standard": 0.1, "Narrow": 0.3}      # the Polydisperse presets of the manual
 DLS_WIDTHS = ("As computed", "Broad", "Standard", "Narrow", "Manual")
+
+
+def dls_form_name(dispersity, resolution):
+    """'Monodisperse, Standard' for the form of distribution a file was calculated with, from its dispersity code (0 = Monodisperse,
+    the only one seen; anything else is reported as a code, not guessed) and its resolution, matched to the manual's presets
+    (Monodisperse -0.5 / 0.3 / 0.6, Polydisperse -0.3 / 0.1 / 0.3 for Broad / Standard / Narrow); another resolution is 'Manual'.
+    None if the file has no resolution."""
+    if resolution is None:
+        return None
+    if not dispersity:
+        kind, presets = "Monodisperse", DLS_FORM_RESOLUTION
+    else:
+        kind, presets = "Dispersity code %d" % int(dispersity), {}
+    width = next((n for n, r in presets.items() if abs(r - resolution) < 1e-3), "Manual")
+    return f"{kind}, {width}"
 
 
 def dls_resolution_sigma(resolution):
@@ -2199,6 +2217,8 @@ class DLSManager:
         ("Viscosity (mPas)", 'Visc_mPas', "Entered: viscosity of the dispersion medium; it enters every size"),
         ("Solvent n", 'n_solvent', "Entered: refractive index of the dispersion medium"),
         ("Solvent", 'Solvent', "Entered: name of the dispersion medium chosen in the software"),
+        ("Form of distribution", 'FORM', "Entered: form chosen in the software (dispersity and width); it fixes the histogram's width"),
+        ("Resolution", 'Resolution', "Entered: the number behind the width of the form (Monodisperse: Broad -0.5, Standard 0.3, Narrow 0.6)"),
         ("── Cumulants ──", None, ""),
         ("Z-Average (nm)", 'ZAvg_nm', "Cumulants: mean size weighted by intensity, from the decay rate of the correlogram"),
         ("PDI", 'PDI', "Cumulants: relative width of the decay rates (the PI): the polydispersity of the sample"),
@@ -2235,6 +2255,8 @@ class DLSManager:
                 continue
             if label == "Date / Time":
                 v, origin = f"{params.get('Date','')} {params.get('Time','')}", "Stored by the software when the measurement was made"
+            elif key == 'FORM':
+                v = dls_form_name(params.get('Dispersity'), params.get('Resolution'))
             else:
                 v = params.get(key)
             self.tree.insert("", tk.END, values=(label, str(v) if v is not None else "—", origin),

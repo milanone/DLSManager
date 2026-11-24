@@ -45,7 +45,7 @@ exports everything to Excel.
   the cumulants for the recomputed source) and the dashed lines of the cumulative plot are the instrument's D10, D50 and D90
   (all named in the legend).
 - **Parameters** tab: the values of the first selected sample (date, solvent, angle, wavelength, temperature, viscosity,
-  refractive index, peak and mean sizes, SD, D10/D50/D90, mode, median, span, Z-average, PDI and the cumulants' S.D.), each with a
+  refractive index, form of distribution and its resolution, peak and mean sizes, SD, D10/D50/D90, mode, median, span, Z-average, PDI and the cumulants' S.D.), each with a
   column saying where it comes from: measured, entered, cumulants (from the decay of the correlogram) or histogram (from the size table).
 - **Excel export**: one `.xlsx` per sample with sheets for the ACF (data, fit, residuals),
   the intensity and number distributions and the parameters.

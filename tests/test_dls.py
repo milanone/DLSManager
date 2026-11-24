@@ -328,6 +328,15 @@ class TestWeighting(unittest.TestCase):
 
 
 class TestWidth(unittest.TestCase):
+    def test_form_name_from_the_stored_resolution(self):
+        f = nsz.dls_form_name
+        self.assertEqual(f(0.0, 0.3), "Monodisperse, Standard")                 # every file seen
+        self.assertEqual(f(0.0, 0.6), "Monodisperse, Narrow")
+        self.assertEqual(f(0.0, -0.5), "Monodisperse, Broad")
+        self.assertEqual(f(0.0, 0.45), "Monodisperse, Manual")
+        self.assertEqual(f(1.0, 0.1), "Dispersity code 1, Manual")              # not guessed: the code was never seen
+        self.assertIsNone(f(0.0, None))
+
     D = np.geomspace(10, 3000, 400)
 
     def _lognormal(self, median, sigma):
