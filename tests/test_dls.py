@@ -546,10 +546,22 @@ class TestDlsTab(unittest.TestCase):
         labels = [menus[0].entrycget(i, "label") for i in range(menus[0].index("end") + 1)
                   if menus[0].type(i) != "tearoff"]
         self.assertIn("Help", labels)
-        with mock.patch("webbrowser.open") as opened:
+        for anchor in ("quantities",):
+            self.assertIn('id="%s"' % anchor, text)
+        with mock.patch("webbrowser.open") as opened:                  # the guide opens inside the program, not in a browser
             self.app.open_guide()
-        opened.assert_called_once()
-        self.assertTrue(opened.call_args[0][0].startswith("file:///") and opened.call_args[0][0].endswith("sz100_guide.html"))
+            self.root.update()
+        opened.assert_not_called()
+        win = self.app._guide_win
+        self.assertTrue(win.winfo_exists())
+        body = win.text.get("1.0", "end")
+        self.assertIn("Quantities: where they come from", body)
+        self.assertIn("Z-average × √PI", body)
+        self.assertEqual(win.contents.size(), len(win.sections))
+        self.assertGreaterEqual(win.contents.size(), 8)
+        self.app.open_guide()                                           # a second call reuses the window
+        self.assertIs(self.app._guide_win, win)
+        win.destroy()
 
     def test_standard_form_draws_the_instrument_width(self):
         app = self.app

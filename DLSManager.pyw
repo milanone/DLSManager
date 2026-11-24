@@ -6,6 +6,7 @@ The plots follow the shared Origin style of PlotStyleKit when the sibling repo i
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import os, struct, re, csv, io, pickle, traceback
+from html.parser import HTMLParser
 try:
     import olefile
     OLEFILE_AVAILABLE = True
@@ -385,6 +386,7 @@ def _read_nsz(path, ole):
         'Median_nm':pv(p1, 'CalcMedian', 2.0),
         'ZAvg_nm':  pv(p1, 'Cum_fMean',  2.0),
         'PDI':      pv(p1, 'Cum_fPi'),          # Cum_fPi = the correct PDI
+        'CumSD_nm': pv(p1, 'Cum_fStd',   2.0),  # = Z-average x sqrt(PI) exactly (28 files); a radius, x2
         'Span':     pv(p1, 'CalcSpan'),
         'GeoMean_nm': pv(p1, 'CalcGeoMean', 2.0),
         'AriMean_nm': pv(p1, 'CalcAriMean', 2.0),
@@ -864,6 +866,191 @@ def dls_record(d):
     return rec
 
 
+class _GuideParser(HTMLParser):
+    """Reads the guide (docs/sz100_guide.html) into blocks for GuideWindow: ('h1'|'h2'|'h3'|'p'|'li'|'note', runs, id) and
+    ('table', rows, None), where `runs` is a list of (text, style) with style '', 'b', 'i' or 'code' and a row is a list of
+    (is_header, runs). The navigation, the style sheet and the title are skipped (the window has its own contents list)."""
+    SKIP = ("nav", "style", "title", "script")
+    INLINE = {"b": "b", "strong": "b", "i": "i", "em": "i", "code": "code"}
+
+    def __init__(self):
+        super().__init__()
+        self.blocks, self.cur, self.kind, self.bid, self.skip = [], None, None, None, 0
+        self.fmt, self.rows, self.row, self.cell_header = [], None, None, False
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag in self.SKIP:
+            self.skip += 1
+        elif self.skip:
+            return
+        elif tag in ("h1", "h2", "h3", "p", "li"):
+            self._begin(tag, a.get("id"))
+        elif tag == "div" and "note" in (a.get("class") or ""):
+            self._begin("note", None)
+        elif tag == "table":
+            self.rows = []
+        elif tag == "tr" and self.rows is not None:
+            self.row = []
+        elif tag in ("td", "th") and self.row is not None:
+            self.cell_header = tag == "th"
+            self._begin("cell", None)
+        elif tag in self.INLINE:
+            self.fmt.append(self.INLINE[tag])
+        elif tag == "br" and self.cur is not None:
+            self.cur.append(("\n", ""))
+
+    def handle_endtag(self, tag):
+        if tag in self.SKIP:
+            self.skip = max(0, self.skip - 1)
+        elif self.skip:
+            return
+        elif tag in ("h1", "h2", "h3", "p", "li") or (tag == "div" and self.kind == "note"):
+            self._end()
+        elif tag in ("td", "th") and self.kind == "cell":
+            self.row.append((self.cell_header, self._trim(self.cur)))
+            self.cur, self.kind = None, None
+        elif tag == "tr" and self.row is not None:
+            self.rows.append(self.row)
+            self.row = None
+        elif tag == "table" and self.rows is not None:
+            self.blocks.append(("table", self.rows, None))
+            self.rows = None
+        elif tag in self.INLINE and self.INLINE[tag] in self.fmt:
+            self.fmt.remove(self.INLINE[tag])
+
+    def handle_data(self, data):
+        if self.skip or self.cur is None:
+            return
+        text = re.sub(r"\s+", " ", data)
+        if text:
+            self.cur.append((text, self.fmt[-1] if self.fmt else ""))
+
+    def _begin(self, kind, bid):
+        self.cur, self.kind, self.bid = [], kind, bid
+
+    def _end(self):
+        if self.cur is not None:
+            runs = self._trim(self.cur)
+            if runs:
+                self.blocks.append((self.kind, runs, self.bid))
+        self.cur, self.kind = None, None
+
+    @staticmethod
+    def _trim(runs):
+        runs = [list(r) for r in (runs or [])]
+        while runs and not runs[0][0].strip():
+            runs.pop(0)
+        while runs and not runs[-1][0].strip():
+            runs.pop()
+        if runs:
+            runs[0][0], runs[-1][0] = runs[0][0].lstrip(), runs[-1][0].rstrip()
+        return [tuple(r) for r in runs]
+
+
+class GuideWindow(tk.Toplevel):
+    """The guide to the SZ-100 settings, shown in a window of the program (not in a browser): a contents list on the left and the
+    text on the right, read from docs/sz100_guide.html. Tables of short cells are aligned in a monospaced font; those with long
+    cells are written one row at a time, the first cell in bold and the others under their column titles."""
+
+    def __init__(self, master, path):
+        super().__init__(master)
+        self.title("SZ-100 settings and recalculation (guide)")
+        self.geometry("1000x680")
+        with open(path, encoding="utf-8") as f:
+            parser = _GuideParser()
+            parser.feed(f.read())
+        self.sections = []                               # (title, mark name) of the h2 headings
+        paned = ttk.PanedWindow(self, orient="horizontal")
+        paned.pack(fill="both", expand=True)
+        left = ttk.Frame(paned)
+        self.contents = tk.Listbox(left, width=34, activestyle="none", exportselection=False, borderwidth=0, highlightthickness=0)
+        self.contents.pack(fill="both", expand=True, padx=(6, 0), pady=6)
+        right = ttk.Frame(paned)
+        self.text = tk.Text(right, wrap="word", padx=16, pady=10, borderwidth=0, highlightthickness=0, cursor="arrow",
+                            font=("Segoe UI", 10), spacing3=4, background="#ffffff", foreground="#1a1a1a")
+        sb = ttk.Scrollbar(right, orient="vertical", command=self.text.yview)
+        self.text.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self.text.pack(side="left", fill="both", expand=True)
+        paned.add(left, weight=0)
+        paned.add(right, weight=1)
+        self._tags()
+        self._render(parser.blocks)
+        self.text.configure(state="disabled")
+        self.contents.bind("<<ListboxSelect>>", self._jump)
+        self.text.bind("<Button-1>", lambda e: self.text.focus_set())
+
+    def _tags(self):
+        t = self.text
+        t.tag_configure("h1", font=("Segoe UI", 16, "bold"), spacing3=8)
+        t.tag_configure("h2", font=("Segoe UI", 13, "bold"), spacing1=18, spacing3=6, foreground="#1f5fa8")
+        t.tag_configure("h3", font=("Segoe UI", 10, "bold"), spacing1=8, spacing3=2)
+        t.tag_configure("p", lmargin1=0, lmargin2=0)
+        t.tag_configure("li", lmargin1=14, lmargin2=28)
+        t.tag_configure("note", lmargin1=12, lmargin2=12, rmargin=12, background="#eef3f8", spacing1=6, spacing3=8)
+        t.tag_configure("b", font=("Segoe UI", 10, "bold"))
+        t.tag_configure("i", font=("Segoe UI", 10, "italic"))
+        t.tag_configure("code", font=("Consolas", 10), background="#f0f2f5")
+        t.tag_configure("mono", font=("Consolas", 10), lmargin1=10, lmargin2=10, spacing3=0)
+        t.tag_configure("monohead", font=("Consolas", 10, "bold"), lmargin1=10, lmargin2=10, spacing3=0, background="#eef3f8")
+        t.tag_configure("rowfirst", font=("Segoe UI", 10, "bold"), lmargin1=10, lmargin2=10, spacing1=6, spacing3=0)
+        t.tag_configure("rowcell", lmargin1=26, lmargin2=26, spacing3=0)
+        t.tag_configure("rowtitle", font=("Segoe UI", 9, "italic"), foreground="#5b6470")
+        t.tag_raise("b"); t.tag_raise("i"); t.tag_raise("code")        # an inline style wins over the block's font
+
+    @staticmethod
+    def _plain(runs):
+        return "".join(r[0] for r in runs)
+
+    def _runs(self, runs, base):
+        for text, style in runs:
+            self.text.insert("end", text, (base, style) if style else (base,))
+
+    def _render(self, blocks):
+        for kind, content, bid in blocks:
+            if kind == "table":
+                self._table(content)
+                continue
+            if kind == "h2":
+                mark = "sec%d" % len(self.sections)
+                self.text.mark_set(mark, "end-1c")
+                self.text.mark_gravity(mark, "left")
+                self.sections.append((self._plain(content), mark))
+                self.contents.insert("end", self._plain(content))
+            if kind == "li":
+                self.text.insert("end", "•  ", ("li",))
+            self._runs(content, kind)
+            self.text.insert("end", "\n", (kind,))
+
+    def _table(self, rows):
+        cells = [[self._plain(r) for _, r in row] for row in rows]
+        cols = max(len(r) for r in cells)
+        widths = [max(len(r[c]) if c < len(r) else 0 for r in cells) for c in range(cols)]
+        if sum(widths) + 3 * cols <= 84:                 # short cells: aligned columns
+            for row, cs in zip(rows, cells):
+                is_head = all(h for h, _ in row)
+                line = "   ".join(cs[c].ljust(widths[c]) if c < len(cs) else " " * widths[c] for c in range(cols))
+                self.text.insert("end", line.rstrip() + "\n", ("monohead" if is_head else "mono",))
+            self.text.insert("end", "\n")
+            return
+        head = cells[0] if all(h for h, _ in rows[0]) else None
+        for row in rows[1 if head else 0:]:
+            self._runs(row[0][1], "rowfirst")
+            self.text.insert("end", "\n", ("rowfirst",))
+            for c, (_, runs) in enumerate(row[1:], 1):
+                if head and c < len(head):
+                    self.text.insert("end", head[c] + ": ", ("rowcell", "rowtitle"))
+                self._runs(runs, "rowcell")
+                self.text.insert("end", "\n", ("rowcell",))
+        self.text.insert("end", "\n")
+
+    def _jump(self, _event=None):
+        sel = self.contents.curselection()
+        if sel:
+            self.text.yview(self.sections[sel[0]][1])
+
+
 class PlotCursor:
     """A movable vertical bar over a figure, to read the values of the curves. Left click or drag in a panel puts the bar
     there (the pan/zoom tools of the toolbar take precedence while they are active); right click removes it. A box
@@ -1039,12 +1226,16 @@ class DLSManager:
     GUIDE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs", "sz100_guide.html")
 
     def open_guide(self):
-        """Open the guide to the SZ-100 settings and recalculation (docs/sz100_guide.html, next to the program) in the browser."""
+        """Show the guide to the SZ-100 settings and recalculation (docs/sz100_guide.html, next to the program) in a window of
+        the program; a second call brings the open window to the front."""
         if not os.path.isfile(self.GUIDE):
             messagebox.showinfo("Guide", "The guide is not found next to the program:\n" + self.GUIDE)
             return
-        import webbrowser
-        webbrowser.open("file:///" + self.GUIDE.replace("\\", "/"))
+        win = getattr(self, "_guide_win", None)
+        if win is not None and win.winfo_exists():
+            win.deiconify(); win.lift(); win.focus_force()
+            return
+        self._guide_win = GuideWindow(self.root, self.GUIDE)
 
     def _build_ui(self):
         # ── Left sidebar ──────────────────────────────────────────────────────
@@ -1346,20 +1537,17 @@ class DLSManager:
         frame = tk.Frame(self.tab_params, bg="white")
         frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        cols = ("Parameter",
-                "Sample 1","Sample 2","Sample 3",
-                "Sample 4","Sample 5")
-        self.tree = ttk.Treeview(frame, columns=cols, show="headings",
-                                 selectmode="browse")
+        cols = ("Parameter", "Value", "Where it comes from")
+        self.tree = ttk.Treeview(frame, columns=cols, show="headings", selectmode="browse")
         vsb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
-        hsb = ttk.Scrollbar(frame, orient="horizontal", command=self.tree.xview)
-        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        self.tree.configure(yscrollcommand=vsb.set)
 
         self.tree.heading("Parameter", text="Parameter")
-        self.tree.column("Parameter", width=160, anchor="w")
-        for c in cols[1:]:
-            self.tree.heading(c, text=c)
-            self.tree.column(c, width=180, anchor="center")
+        self.tree.column("Parameter", width=170, anchor="w", stretch=False)
+        self.tree.heading("Value", text="Value")
+        self.tree.column("Value", width=190, anchor="center", stretch=False)
+        self.tree.heading("Where it comes from", text="Where it comes from")
+        self.tree.column("Where it comes from", width=720, anchor="w")
 
         style = ttk.Style()
         style.configure("Treeview", font=("Helvetica",9), rowheight=22)
@@ -1370,7 +1558,6 @@ class DLSManager:
 
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
 
         # Alternating rows
         self.tree.tag_configure("odd",  background="#F8FAFC")
@@ -2002,62 +2189,56 @@ class DLSManager:
 
     # ── Parameters table ──────────────────────────────────────────────────────
 
+    # (label, key of the parameters, where the value comes from); a None key makes a section heading
+    PARAM_ROWS = [
+        ("── Measurement ──", None, ""),
+        ("Date / Time", None, ""),                      # filled from two keys, see below
+        ("Angle (°)", 'Angle_deg', "Entered: detector position (90° or 173°); it enters every size"),
+        ("Wavelength (nm)", 'Lambda_nm', "Instrument constant: the laser (532 nm)"),
+        ("Temperature (°C)", 'Temp_C', "Measured: temperature sensor of the sample holder"),
+        ("Viscosity (mPas)", 'Visc_mPas', "Entered: viscosity of the dispersion medium; it enters every size"),
+        ("Solvent n", 'n_solvent', "Entered: refractive index of the dispersion medium"),
+        ("Solvent", 'Solvent', "Entered: name of the dispersion medium chosen in the software"),
+        ("── Cumulants ──", None, ""),
+        ("Z-Average (nm)", 'ZAvg_nm', "Cumulants: mean size weighted by intensity, from the decay rate of the correlogram"),
+        ("PDI", 'PDI', "Cumulants: relative width of the decay rates (the PI): the polydispersity of the sample"),
+        ("Cumulants S.D. (nm)", 'CumSD_nm', "Cumulants: Z-average x sqrt(PI), exactly (every file checked); not a separate result"),
+        ("── Histogram ──", None, ""),
+        ("Peak 1 (nm)", 'Peak1_nm', "Histogram: size of the highest bin (= the mode). Its width is set by the form, not by the PDI"),
+        ("Mean 1 (nm)", 'Mean1_nm', "Histogram: mean of the size table; its position is near the Z-average"),
+        ("SD 1 (nm)", 'SD1_nm', "Histogram: S.D. of the size table, about a quarter of its mean (set by the form)"),
+        ("Area 1 (%)", 'Area1_pct', "Histogram: share of the intensity in peak 1"),
+        ("Peak 2 (nm)", 'Peak2_nm', "Histogram: second peak, only when the software finds two (Polydisperse form)"),
+        ("Mean 2 (nm)", 'Mean2_nm', "Histogram: mean of the second peak"),
+        ("D10 (nm)", 'D10_nm', "Histogram: size below which 10% of the intensity lies (cumulative curve)"),
+        ("D50 (nm)", 'D50_nm', "Histogram: size below which 50% of the intensity lies (cumulative curve)"),
+        ("D90 (nm)", 'D90_nm', "Histogram: size below which 90% of the intensity lies (cumulative curve)"),
+        ("Mode (nm)", 'Mode_nm', "Histogram: size of the highest bin"),
+        ("Median (nm)", 'Median_nm', "Histogram: size at 50% of the cumulative curve, interpolated"),
+        ("Span", 'Span', "Histogram: width of the cumulative curve relative to its centre"),
+        ("Arithmetic mean (nm)", 'AriMean_nm', "Histogram: arithmetic mean of the size table"),
+        ("Geometric mean (nm)", 'GeoMean_nm', "Histogram: geometric mean of the size table"),
+    ]
+
     def _update_params_table(self):
+        """The parameters of the first selected sample, each with where it comes from (measured, entered, cumulants or histogram)."""
         self.tree.delete(*self.tree.get_children())
-        sel = self.selected[:5]
-        if not sel:
+        if not self.selected:
+            self.tree.heading("Value", text="Value")
             return
-
-        # Update the column headings
-        for i, path in enumerate(sel):
-            n = self.samples[path]['params'].get('Sample_Name','')
-            lbl = n
-            self.tree.heading(f"Sample {i+1}", text=lbl)
-
-        ROWS = [
-            ("── Measurement ──", None),
-            ("Date / Time", lambda p: f"{p.get('Date','')} {p.get('Time','')}"),
-            ("Angle (°)", lambda p: p.get('Angle_deg')),
-            ("Wavelength (nm)", lambda p: p.get('Lambda_nm')),
-            ("Temperature (°C)", lambda p: p.get('Temp_C')),
-            ("Viscosity (mPas)", lambda p: p.get('Visc_mPas')),
-            ("Solvent n", lambda p: p.get('n_solvent')),
-            ("Solvent", lambda p: p.get('Solvent')),
-            ("── Results ──", None),
-            ("Peak 1 (nm)", lambda p: p.get('Peak1_nm')),
-            ("Mean 1 (nm)", lambda p: p.get('Mean1_nm')),
-            ("SD 1 (nm)", lambda p: p.get('SD1_nm')),
-            ("Area 1 (%)", lambda p: p.get('Area1_pct')),
-            ("Peak 2 (nm)", lambda p: p.get('Peak2_nm')),
-            ("Mean 2 (nm)", lambda p: p.get('Mean2_nm')),
-            ("D10 (nm)", lambda p: p.get('D10_nm')),
-            ("D50 (nm)", lambda p: p.get('D50_nm')),
-            ("D90 (nm)", lambda p: p.get('D90_nm')),
-            ("Mode (nm)", lambda p: p.get('Mode_nm')),
-            ("Median (nm)", lambda p: p.get('Median_nm')),
-            ("Z-Average (nm)", lambda p: p.get('ZAvg_nm')),
-            ("PDI", lambda p: p.get('PDI')),
-            ("Span", lambda p: p.get('Span')),
-            ("Arithmetic mean (nm)", lambda p: p.get('AriMean_nm')),
-            ("Geometric mean (nm)", lambda p: p.get('GeoMean_nm')),
-        ]
-
-        for row_i, (label, fn) in enumerate(ROWS):
-            tag = "odd" if row_i % 2 else "even"
-            if fn is None:
-                vals = [label] + [""] * 5
-                self.tree.insert("", tk.END, values=vals, tags=("section",))
-                self.tree.tag_configure("section",
-                                        background="#EFF6FF",
-                                        font=("Helvetica", 9, "bold"))
+        params = self.samples[self.selected[0]]['params']
+        self.tree.heading("Value", text=params.get('Sample_Name', '') or "Value")
+        self.tree.tag_configure("section", background="#EFF6FF", font=("Helvetica", 9, "bold"))
+        for row_i, (label, key, origin) in enumerate(self.PARAM_ROWS):
+            if label.startswith("──"):
+                self.tree.insert("", tk.END, values=(label, "", ""), tags=("section",))
+                continue
+            if label == "Date / Time":
+                v, origin = f"{params.get('Date','')} {params.get('Time','')}", "Stored by the software when the measurement was made"
             else:
-                cells = [label]
-                for path in sel:
-                    v = fn(self.samples[path]['params'])
-                    cells.append(str(v) if v is not None else "—")
-                while len(cells) < 6:
-                    cells.append("")
-                self.tree.insert("", tk.END, values=cells, tags=(tag,))
+                v = params.get(key)
+            self.tree.insert("", tk.END, values=(label, str(v) if v is not None else "—", origin),
+                             tags=("odd" if row_i % 2 else "even",))
 
 
     # ── Export ────────────────────────────────────────────────────────────────

@@ -44,8 +44,9 @@ exports everything to Excel.
   of saved figures. In the distribution plot the vertical dotted line is the Z-average (the instrument's, or the one from
   the cumulants for the recomputed source) and the dashed lines of the cumulative plot are the instrument's D10, D50 and D90
   (all named in the legend).
-- **Parameters** tab: date, solvent, scattering angle, wavelength, temperature, viscosity,
-  refractive index, peak and mean sizes, SD, D10/D50/D90, mode, median, Z-average, PDI and span.
+- **Parameters** tab: the values of the first selected sample (date, solvent, angle, wavelength, temperature, viscosity,
+  refractive index, peak and mean sizes, SD, D10/D50/D90, mode, median, span, Z-average, PDI and the cumulants' S.D.), each with a
+  column saying where it comes from: measured, entered, cumulants (from the decay of the correlogram) or histogram (from the size table).
 - **Excel export**: one `.xlsx` per sample with sheets for the ACF (data, fit, residuals),
   the intensity and number distributions and the parameters.
 - **Figures**: `File → Save Figure Image (PNG, PDF, SVG)...`, `Save Figure (pickle)...` and `Edit Figure...` work on the
@@ -66,7 +67,7 @@ pythonw DLSManager.pyw [file.nsz ...]
 
 `pythonw` starts it without a console window (`python` keeps one).
 
-*Help → SZ-100 settings and recalculation (guide)* opens `docs/sz100_guide.html` in the browser: how a measurement is set up on the
+*Help → SZ-100 settings and recalculation (guide)* opens `docs/sz100_guide.html` in a window of the program (contents list on the left; no browser): how a measurement is set up on the
 instrument, what its forms of distribution and its recalculation do, and what is verified. It is a guide written for this program
 from the instrument's Quick Start and from the measurements; it does not reproduce the manual, which is Horiba's.
 

@@ -26,7 +26,7 @@ layout, PI 0.6) is gone from the folder; its results are described below. Tk tes
 without it. The three `screenshot*.png` are the real program with the 0843 file (window grabbed with `CopyFromScreen`, cropped).
 
 Guide (2026-11-23): `docs/sz100_guide.html` (own words, no screenshots, no text of Horiba's manual: the manual is copyrighted and this repository is
-public) opened by Help > 'SZ-100 settings and recalculation (guide)' (`open_guide()`, `DLSManager.GUIDE`, `webbrowser`). A faithful hypertext and a clean PDF of the
+public) opened by Help > 'SZ-100 settings and recalculation (guide)' (`open_guide()`, `DLSManager.GUIDE`; since 2026-11-24 shown in a program window, `GuideWindow`, which reads the HTML with `_GuideParser` (headings, paragraphs, lists, tables, bold/italic/code): short tables are aligned in a monospaced font, tables with long cells are written one row at a time; no browser, no extra package). A faithful hypertext and a clean PDF of the
 scanned manual exist only in the unpublished folder `DLSManager/SZ100Manual/` (moved there on 2026-11-23; listed in `.gitignore`: never commit or push it). The guide's facts: the instrument's forms and resolution
 presets, the measured widths, the recalculation (CSV only), the bin edges; update it when those change.
 
@@ -36,11 +36,13 @@ points and the narrow distribution peak. Requested by Francesco for XYplorer; th
 
 ## Architecture
 
+Parameters tab (2026-11-24): three columns, Parameter / Value (first selected sample) / Where it comes from (`PARAM_ROWS`: measured, entered, cumulants, histogram). `params['CumSD_nm']` = `Cum_fStd` x 2 = Z-average x sqrt(PI) exactly in the 28 files that carry cumulants (checked 2026-11-24); `Mean1_nm` equals `AriMean_nm`, `Peak1_nm` equals `Mode_nm`. A width taken from the PI (sigma = sqrt(PI)) was tried on the 29 files and does not beat the Standard width (median error of the number mean vs the instrument's table 12-17% against 3.8%).
+
 Single file `DLSManager.pyw`: parser functions (`f32`, `parse_props`, `load_nsz` / `_read_nsz`, `dump_nsz` for
 debugging) and the class `DLSManager` (sidebar with sample list, a `ttk.Notebook` with Autocorrelogram /
 Size distribution / Parameters tabs, matplotlib `Figure`s `fig_acf` and `fig_size`). `self.samples = {path: data dict}`, `self.selected`
-= paths shown. `_plot_acf` / `_plot_size` redraw on every control change, `_update_params_table` fills the table (up to 5
-samples), `_write_xlsx` writes one workbook per sample, `_to_number_dist` converts intensity to number distribution
+= paths shown. `_plot_acf` / `_plot_size` redraw on every control change, `_update_params_table` fills the table (first selected
+sample), `_write_xlsx` writes one workbook per sample, `_to_number_dist` converts intensity to number distribution
 (Rayleigh, N proportional to I/d^6).
 
 ## The .nsz format (OLE compound file, read with `olefile`)

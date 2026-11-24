@@ -301,9 +301,13 @@ class TestApplication(unittest.TestCase):
         self.add_synthetic("a", "b")
         rows = [self.app.tree.item(i, "values") for i in self.app.tree.get_children()]
         by_label = {r[0]: r for r in rows}
-        self.assertEqual(by_label["D50 (nm)"][1:3], ("316.0", "316.0"))
+        self.assertEqual(by_label["D50 (nm)"][1], "316.0")
         self.assertEqual(by_label["Peak 2 (nm)"][1], "—")                      # missing value
-        self.assertEqual(self.app.tree.heading("Sample 1")["text"], "a")
+        self.assertEqual(self.app.tree.heading("Value")["text"], "a")          # the first selected sample
+        self.assertEqual(len(rows[0]), 3)                                      # parameter, value, where it comes from
+        self.assertIn("Cumulants", by_label["Z-Average (nm)"][2])
+        self.assertIn("Histogram", by_label["Mode (nm)"][2])
+        self.assertTrue(all(r[2] for r in rows if r[1]), "every value has its origin")
 
     def test_remove_selected(self):
         self.add_synthetic("a", "b")
