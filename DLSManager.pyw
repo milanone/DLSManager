@@ -2006,7 +2006,8 @@ class DLSManager:
         fig.clear()
         weight, conv = self.dls_weight.get(), self.dls_conv.get()
         show_c = self.show_cumul.get()
-        gs = fig.add_gridspec(1, 3 if show_c else 2, wspace=0.35)
+        # no wspace here: a gridspec with its own spacing is left out of tight_layout, and the saved figure had its x labels cut
+        gs = fig.add_gridspec(1, 3 if show_c else 2)
         ax1, ax2 = fig.add_subplot(gs[0]), fig.add_subplot(gs[1])
         axc = fig.add_subplot(gs[2]) if show_c else None
         lines, ray_items, peak_warn = [], [], []
