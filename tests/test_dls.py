@@ -389,6 +389,88 @@ class TestRecalculationCsv(unittest.TestCase):
             root.destroy()
 
 
+def measurement(name, size, z, folder="data", **changes):
+    """A synthetic measurement shaped like load_nsz() output, enough for dls_average()."""
+    sz = np.logspace(-0.47, 3.93, 84)
+    intens = np.exp(-0.5 * (np.log(sz / size) / 0.24) ** 2)
+    intens = intens / intens.sum() * 100
+    acf = correlogram([size], [1.0])
+    params = {'Sample_Name': 'latex', 'Date': '2026-01-02', 'Time': '10:00:0%s' % name[-1], 'Angle_deg': 173.0, 'Lambda_nm': 532.0,
+              'Temp_C': 25.0, 'Visc_mPas': 0.896, 'n_solvent': 1.333, 'n_particle': 1.59, 'Resolution': 0.3, 'Dispersity': 0.0,
+              'Range_from': 7, 'Range_to': 30 + int(name[-1]), 'ZAvg_nm': z, 'PDI': 0.05, 'Mean1_nm': size, 'Peak2_nm': None}
+    params.update(changes)
+    return {'name': name, 'path': os.path.join(folder, name + ".nsz"), 'tau': TAU * 1e6, 'acf': acf, 'fit': acf[6:30],
+            'resid': acf[6:30] * 0.01, 'fit_offset': 6, 'tau_aligned': True, 'sz': sz, 'intens': intens,
+            'cumul': np.cumsum(intens), 'params': params}
+
+
+class TestAverage(unittest.TestCase):
+    def test_curves_and_results_are_the_mean_of_the_measurements(self):
+        a, b = measurement("latex_0001", 120.0, 100.0), measurement("latex_0002", 150.0, 110.0)
+        m = nsz.dls_average([a, b])
+        np.testing.assert_allclose(m['acf'], (a['acf'] + b['acf']) / 2)
+        np.testing.assert_allclose(m['intens'], (a['intens'] + b['intens']) / 2)
+        self.assertAlmostEqual(m['params']['ZAvg_nm'], 105.0)
+        self.assertAlmostEqual(m['spread']['ZAvg_nm'], np.std([100.0, 110.0], ddof=1))
+        self.assertIsNone(m['params']['Peak2_nm'])                          # absent in a measurement: absent in the mean
+        self.assertEqual(m['params']['Range_to'], 31)                       # the channels both used
+        self.assertEqual(m['name'], "latex_avg_0001+0002")
+        self.assertEqual(os.path.dirname(m['path']), "data")                # saved next to the inputs
+        self.assertEqual(m['sources'], [a['path'], b['path']])
+        self.assertIsNotNone(nsz.dls_record(m))                             # the averaged correlogram can be inverted
+        self.assertEqual((m['params']['Time']), "10:00:01 to 10:00:02")
+
+    def test_measurements_that_do_not_match_are_refused(self):
+        a = measurement("latex_0001", 120.0, 100.0)
+        cases = {"At least two": [a], "scattering angle": [a, measurement("latex_0002", 120.0, 100.0, Angle_deg=90.0)],
+                 "temperature": [a, measurement("latex_0002", 120.0, 100.0, Temp_C=37.0)],
+                 "form of distribution": [a, measurement("latex_0002", 120.0, 100.0, Resolution=0.6)]}
+        other_delays = measurement("latex_0002", 120.0, 100.0)
+        other_delays['tau'] = other_delays['tau'][:-3]
+        cases["delays"] = [a, other_delays]
+        csv = dict(measurement("latex_0002", 120.0, 100.0), from_csv=True)
+        cases["cannot be averaged together"] = [a, csv]
+        cases["averaged again"] = [a, nsz.dls_average([a, measurement("latex_0002", 120.0, 100.0)])]
+        for reason, samples in cases.items():
+            with self.assertRaisesRegex(ValueError, reason):
+                nsz.dls_average(samples)
+
+    def test_button_adds_selects_and_saving_starts_in_the_data_folder(self):
+        import tempfile
+        import tkinter as tk
+        from unittest import mock
+        try:
+            root = nsz.TkinterDnD.Tk() if nsz.DND_AVAILABLE else tk.Tk()
+        except tk.TclError as e:
+            self.skipTest("Tk not available: %s" % e)
+        root.withdraw()
+        try:
+            app = nsz.DLSManager(root)
+            folder = tempfile.gettempdir()
+            for d in (measurement("latex_0001", 120.0, 100.0, folder), measurement("latex_0002", 150.0, 110.0, folder)):
+                app.samples[d['path']] = d
+                app.listbox.insert(tk.END, d['name'])
+            app.listbox.selection_set(0, 1); app._on_select()
+            app._average_selected(); root.update()
+            self.assertEqual(app.listbox.size(), 3)
+            self.assertTrue(app.listbox.get(2).startswith("∑"))
+            self.assertEqual(list(app.listbox.curselection()), [2])          # the new average is the selection
+            rows = {app.tree.item(i, "values")[0]: app.tree.item(i, "values") for i in app.tree.get_children()}
+            self.assertEqual(rows["Average of"][1], "2 measurements")
+            self.assertTrue(rows["Z-Average (nm)"][1].startswith("105.0 ± "))
+            self.assertTrue(app._short_label(app.samples[app.selected[0]]['name']).endswith("(average)"))
+            app.listbox.selection_clear(0, tk.END); app.listbox.selection_set(0, 1); app._on_select()
+            app._average_selected()                                          # the same files again: no second copy
+            self.assertEqual(app.listbox.size(), 3)
+            self.assertEqual(os.path.normpath(app._data_folder()), os.path.normpath(folder))
+            with mock.patch("tkinter.filedialog.asksaveasfilename", return_value="") as ask:
+                app._export_xlsx()
+            if nsz.XLSX_AVAILABLE:
+                self.assertEqual(os.path.normpath(ask.call_args.kwargs["initialdir"]), os.path.normpath(folder))
+        finally:
+            root.destroy()
+
+
 class TestWidth(unittest.TestCase):
     def test_form_name_from_the_stored_resolution(self):
         f = nsz.dls_form_name

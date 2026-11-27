@@ -44,6 +44,11 @@ exports everything to Excel.
   of saved figures. In the distribution plot the vertical dotted line is the Z-average (the instrument's, or the one from
   the cumulants for the recomputed source) and the dashed lines of the cumulative plot are the instrument's D10, D50 and D90
   (all named in the legend).
+- **Average** of two or more measurements (select them, then *Average selected*): correlogram, size table and fit averaged
+  point by point, each result as mean ± standard deviation between the measurements, the Recomputed analysis on the averaged
+  correlogram. Refused for different conditions (angle, medium, temperature, form of distribution), a mix of `.nsz` and CSV, or
+  an average of an average. The average lives in the program until exported (Excel, figures).
+- **Saving**: every save dialog (Excel, figures, figure editor, toolbar) opens in the folder of the data files.
 - **CSV exports** of the software (a recalculation writes only a CSV, no new `.nsz`) open like a `.nsz`: correlation with
   its fit, size table, results and the form of distribution named in the header. No Recomputed source for them (no raw correlogram).
 - **Parameters** tab: the values of the first selected sample (date, solvent, angle, wavelength, temperature, viscosity,

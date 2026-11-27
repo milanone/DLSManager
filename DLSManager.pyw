@@ -253,6 +253,80 @@ def load_csv(path):
     }
 
 
+AVERAGED_PARAMS = ('Temp_C', 'Visc_mPas', 'Peak1_nm', 'Mean1_nm', 'SD1_nm', 'Area1_pct', 'Peak2_nm', 'Mean2_nm', 'SD2_nm',
+                   'D10_nm', 'D50_nm', 'D90_nm', 'Mode_nm', 'Median_nm', 'ZAvg_nm', 'PDI', 'CumSD_nm', 'Span', 'GeoMean_nm',
+                   'AriMean_nm')
+# conditions that must be the same for two measurements to be averaged: (key, name in the message, tolerance)
+SAME_FOR_AVERAGE = (('Angle_deg', "scattering angle", 0.5), ('Lambda_nm', "wavelength", 0.5), ('n_solvent', "solvent index", 0.002),
+                    ('n_particle', "particle index", 0.002), ('Temp_C', "temperature", 0.5), ('Visc_mPas', "viscosity", 0.01),
+                    ('Resolution', "form of distribution", 1e-3), ('Dispersity', "form of distribution", 1e-3),
+                    ('FormText', "form of distribution", None), ('Range_from', "first channel of the distribution", 0.5))
+
+
+def dls_average(samples):
+    """The mean of two or more measurements (sample dicts of load_nsz() / load_csv()) as a new sample: correlogram channel by
+    channel (so the Recomputed source inverts the averaged correlogram), the instrument's size table bin by bin, its fit over
+    the channels common to all, and each numeric result as the mean of the measurements' values, with their standard deviation
+    in 'spread'. ValueError, with the reason, if they cannot be averaged: other conditions or form of distribution, other
+    delays or size bins, a mix of .nsz and CSV, or an average among them (it would weigh its measurements twice or unequally)."""
+    if len(samples) < 2:
+        raise ValueError("At least two measurements are needed.")
+    if any(d.get('sources') for d in samples):
+        raise ValueError("An average cannot be averaged again: the original measurements are to be selected.")
+    first = samples[0]
+    if len({bool(d.get('from_csv')) for d in samples}) > 1:
+        raise ValueError(".nsz files and CSV exports cannot be averaged together (their correlograms start at other delays).")
+    if not all(d.get('tau_aligned') for d in samples):
+        raise ValueError("A file has delays that are not matched to its correlogram.")
+    for key, what in (('tau', "correlator delays"), ('sz', "size bins")):
+        for d in samples[1:]:
+            if len(d[key]) != len(first[key]) or not np.allclose(d[key], first[key], rtol=1e-3):
+                raise ValueError(f"The {what} of '{d['name']}' differ from those of '{first['name']}'.")
+    for key, what, tol in SAME_FOR_AVERAGE:
+        a = first['params'].get(key)
+        for d in samples[1:]:
+            b = d['params'].get(key)
+            same = a == b if tol is None or a is None or b is None else abs(a - b) <= tol
+            if not same:
+                raise ValueError(f"The {what} of '{d['name']}' ({b}) differs from that of '{first['name']}' ({a}).")
+
+    n = len(samples)
+    params = dict(first['params'])
+    spread = {}
+    for key in AVERAGED_PARAMS:
+        values = [d['params'].get(key) for d in samples]
+        if any(v is None for v in values):
+            params[key] = None
+            continue
+        params[key] = round(float(np.mean(values)), 4)
+        spread[key] = float(np.std(values, ddof=1))
+    ends = [d['params'].get('Range_to') for d in samples]
+    params['Range_to'] = None if any(e is None for e in ends) else min(ends)      # the channels every measurement used
+    when = sorted((d['params'].get('Date', ''), d['params'].get('Time', '')) for d in samples)
+    params['Date'], params['Time'] = when[0][0], f"{when[0][1]} to {when[-1][1]}"
+    params['Sample_Name'] = f"{first['params'].get('Sample_Name') or first['name']} (average of {n})"
+
+    offsets = {d.get('fit_offset', 6) for d in samples}
+    def mean_over_common(key):
+        length = min(len(d[key]) for d in samples)
+        if len(offsets) > 1 or length < 3:
+            return np.array([])
+        return np.mean([np.asarray(d[key][:length], float) for d in samples], axis=0)
+
+    parts = [re.match(r"(.*?)(?:_(\d+))?$", d['name']).groups() for d in samples]
+    numbers = [number for _, number in parts]
+    name = f"{parts[0][0]}_avg_{'+'.join(numbers)}" if all(numbers) else f"{parts[0][0]}_avg{n}"
+    return {
+        'name': name, 'path': os.path.join(os.path.dirname(first['path']), name + ".avg"),
+        'tau': first['tau'].copy(), 'acf': np.mean([d['acf'] for d in samples], axis=0),
+        'fit': mean_over_common('fit'), 'resid': mean_over_common('resid'), 'fit_offset': first.get('fit_offset', 6),
+        'tau_aligned': True, 'from_csv': bool(first.get('from_csv')),
+        'sz': first['sz'].copy(), 'intens': np.mean([d['intens'] for d in samples], axis=0),
+        'cumul': np.mean([d['cumul'] for d in samples], axis=0),
+        'params': params, 'spread': spread, 'sources': [d['path'] for d in samples],
+    }
+
+
 def _nsz_correlogram(ole):
     """(delay times in µs, normalised g2-1) from the float32 arrays 'Delay' (seconds) and 'OriginalACF', or None.
     Each array sits in one stream, preceded by its byte length (u32) and its key name; the ACF has a few junk values
@@ -1286,6 +1360,7 @@ class DLSManager:
         m = tk.Menu(bar, tearoff=0)
         m.add_command(label="Open .nsz / .csv files...", command=self._open_files)
         m.add_command(label="Open folder...", command=self._open_folder)
+        m.add_command(label="Average selected measurements", command=self._average_selected)
         m.add_command(label="Export Excel...", command=self._export_xlsx)
         m.add_separator()
         m.add_command(label="Save Figure Image (PNG, PDF, SVG)...", command=self.save_figure_image)
@@ -1332,6 +1407,7 @@ class DLSManager:
         for text, cmd in [
             ("＋  Open .nsz / .csv files", self._open_files),
             ("📁  Open folder",  self._open_folder),
+            ("∑  Average selected",   self._average_selected),
             ("🗑  Remove selected",   self._remove_selected),
             ("💾  Export Excel",  self._export_xlsx),
         ]:
@@ -1707,6 +1783,35 @@ class DLSManager:
                 self.listbox.selection_set(i)
             self._on_select()
 
+    def _average_selected(self):
+        """Add the mean of the selected measurements to the list and select it (see dls_average)."""
+        if len(self.selected) < 2:
+            messagebox.showinfo("Average", "Select two or more measurements in the list (Ctrl+click or Shift+click).")
+            return
+        try:
+            data = dls_average([self.samples[p] for p in self.selected])
+        except ValueError as e:
+            messagebox.showwarning("Average", str(e))
+            return
+        path, stem, k = data['path'], os.path.splitext(data['path'])[0], 2
+        while path in self.samples and self.samples[path]['sources'] != data['sources']:      # same name, other files
+            path, k = f"{stem}_{k}.avg", k + 1
+        if path not in self.samples:
+            data['path'], data['name'] = path, os.path.splitext(os.path.basename(path))[0]
+            self.samples[path] = data
+            self.listbox.insert(tk.END, "∑ " + data['name'])
+        index = list(self.samples).index(path)
+        self.listbox.selection_clear(0, tk.END)
+        self.listbox.selection_set(index)
+        self.listbox.see(index)
+        self._on_select()
+
+    def _data_folder(self):
+        """Where files are saved by default: the folder of the input file of the first selected sample (of the first of its
+        measurements for an average), else of the last one loaded; None with nothing loaded."""
+        path = self.selected[0] if self.selected else next(reversed(self.samples), None)
+        return os.path.dirname(os.path.abspath(path)) if path else None
+
     def _remove_selected(self):
         sel = list(self.listbox.curselection())
         paths = list(self.samples.keys())
@@ -1723,6 +1828,8 @@ class DLSManager:
         indices = self.listbox.curselection()
         paths = list(self.samples.keys())
         self.selected = [paths[i] for i in indices if i < len(paths)]
+        if self.selected:
+            matplotlib.rcParams['savefig.directory'] = self._data_folder()      # the toolbar's own save button
         self._refresh_all()
 
     def _refresh_all(self):
@@ -2309,7 +2416,18 @@ class DLSManager:
         params = self.samples[self.selected[0]]['params']
         self.tree.heading("Value", text=params.get('Sample_Name', '') or "Value")
         self.tree.tag_configure("section", background="#EFF6FF", font=("Helvetica", 9, "bold"))
+        sample = self.samples[self.selected[0]]
+        sources, spread = sample.get('sources'), sample.get('spread', {})
+        if sources:
+            self.tree.insert("", tk.END, values=("── Average ──", "", ""), tags=("section",))
+            self.tree.insert("", tk.END, values=("Average of", f"{len(sources)} measurements",
+                                                 "Results: mean ± S.D. between the measurements; curves: mean point by point"),
+                             tags=("even",))
+            for i, src in enumerate(sources, 1):
+                self.tree.insert("", tk.END, values=(f"File {i}", "", os.path.basename(src)), tags=("odd" if i % 2 else "even",))
         for row_i, (label, key, origin) in enumerate(self.PARAM_ROWS):
+            if sources and key == 'CumSD_nm':
+                origin = "Cumulants: mean of the Z-average x sqrt(PI) of each measurement"
             if label.startswith("──"):
                 self.tree.insert("", tk.END, values=(label, "", ""), tags=("section",))
                 continue
@@ -2319,6 +2437,8 @@ class DLSManager:
                 v = params.get('FormText') or dls_form_name(params.get('Dispersity'), params.get('Resolution'))
             else:
                 v = params.get(key)
+            if v is not None and key in spread:
+                v = f"{v} ± {spread[key]:.3g}"
             self.tree.insert("", tk.END, values=(label, str(v) if v is not None else "—", origin),
                              tags=("odd" if row_i % 2 else "even",))
 
@@ -2443,7 +2563,18 @@ class DLSManager:
             c2 = ws_p.cell(ri, 2, val if val is not None else '—')
             c1.font = cell_font; c1.border = border
             c2.font = cell_font; c2.border = border
+            if key in d.get('spread', {}):
+                c3 = ws_p.cell(ri, 3, round(d['spread'][key], 4))
+                c3.font = cell_font; c3.border = border
             ri += 1
+
+        if d.get('sources'):                                    # an average: say so, and of which files
+            style_header(ws_p.cell(1, 3), 'S.D. between measurements')
+            ws_p.column_dimensions['C'].width = 28
+            for i, src in enumerate(d['sources'], 1):
+                ws_p.cell(ri, 1, f'Averaged file {i}').font = cell_font
+                ws_p.cell(ri, 2, os.path.basename(src)).font = cell_font
+                ri += 1
 
         wb.save(dest_path)
 
@@ -2459,6 +2590,7 @@ class DLSManager:
             d = self.samples[self.selected[0]]
             dest = filedialog.asksaveasfilename(
                 title="Save as...",
+                initialdir=self._data_folder(),
                 initialfile=f'{d["name"]}.xlsx',
                 defaultextension='.xlsx',
                 filetypes=[("Excel", "*.xlsx")])
@@ -2466,7 +2598,7 @@ class DLSManager:
                 self._write_xlsx(dest, d)
                 messagebox.showinfo("Export completed", f"Saved:\n{dest}")
         else:
-            folder = filedialog.askdirectory(title="Destination folder")
+            folder = filedialog.askdirectory(title="Destination folder", initialdir=self._data_folder())
             if not folder:
                 return
             saved = []
@@ -2520,10 +2652,10 @@ class DLSManager:
         if fig is None:
             return
         if psk is not None:
-            psk.save_image_dialog(fig, self.root, preset=self._preset_for(fig), unpin=False)
+            psk.save_image_dialog(fig, self.root, initialdir=self._data_folder(), preset=self._preset_for(fig), unpin=False)
             return
         path = filedialog.asksaveasfilename(
-            title="Save Figure Image", defaultextension=".png",
+            title="Save Figure Image", defaultextension=".png", initialdir=self._data_folder(),
             filetypes=[("PNG", "*.png"), ("PDF", "*.pdf"), ("SVG", "*.svg"), ("All Files", "*.*")])
         if not path:
             return
@@ -2542,10 +2674,10 @@ class DLSManager:
         if fig is None:
             return
         if psk is not None:
-            psk.save_pickle_dialog(fig, self.root, preset=self._preset_for(fig), unpin=False)
+            psk.save_pickle_dialog(fig, self.root, initialdir=self._data_folder(), preset=self._preset_for(fig), unpin=False)
             return
         path = filedialog.asksaveasfilename(
-            title="Save Figure", defaultextension=".fig.pickle",
+            title="Save Figure", defaultextension=".fig.pickle", initialdir=self._data_folder(),
             filetypes=[("Matplotlib Figure (pickle)", "*.pickle *.pkl"), ("All Files", "*.*")])
         if not path:
             return
@@ -2566,7 +2698,9 @@ class DLSManager:
             return
         if not self._need_plotstylekit("Edit Figure"):
             return
-        psk.edit_dialog(fig, self.root, title="current figure", preset=self._preset_for(fig), unpin=False)
+        editor = psk.edit_dialog(fig, self.root, title="current figure", preset=self._preset_for(fig), unpin=False)
+        if editor is not None:
+            editor.initialdir = self._data_folder()          # where the editor's own save dialogs open
 
     # ---- PlotStyleKit: the Origin look and the figure editor (a fallback without it for each) ----
     def _adopt_plotstylekit(self, mod):
@@ -2617,6 +2751,10 @@ class DLSManager:
     # ── Utility ───────────────────────────────────────────────────────────────
 
     def _short_label(self, name):
+        average = re.match(r"(.*)_avg(_[\d+]+|\d+)(_\d+)?$", name)
+        if average:                                          # an average must not look like one of its measurements
+            base = average.group(1)
+            return "∑ " + (base if len(base) <= 28 else base[:27] + '…') + " (average)"
         if len(name) > 35:
             return name[:32] + '…'
         return name
