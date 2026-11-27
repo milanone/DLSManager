@@ -28,169 +28,173 @@ code{background:var(--side);padding:0 .25rem;border-radius:3px;font-size:.9em}
 <div class="wrap">
 <nav>
 <ol>
-<li><a href="#standard">1. A latex check standard</a></li>
-<li><a href="#setup">2. Settings of a size measurement</a></li>
+<li><a href="#standard">1. Latex check standard</a></li>
+<li><a href="#setup">2. Measurement settings</a></li>
 <li><a href="#quantities">3. Quantities: where they come from</a></li>
 <li><a href="#forms">4. Forms of distribution</a></li>
 <li><a href="#advanced">5. Advanced calculation options</a></li>
-<li><a href="#recalc">6. Recalculation and the CSV export</a></li>
-<li><a href="#dlsmanager">7. What DLSManager does with them</a></li>
-<li><a href="#limits">8. What is verified</a></li>
+<li><a href="#recalc">6. Recalculation and CSV export</a></li>
+<li><a href="#dlsmanager">7. Functions of DLSManager</a></li>
+<li><a href="#limits">8. Interpretation of results</a></li>
 </ol>
 </nav>
 <main>
-<h1>Horiba SZ-100: settings and recalculation</h1>
-<p class="lead">A short guide written for DLSManager. It summarises, in its own words, the parts of the instrument's Quick Start
-(December 2011) that decide how a <code>.nsz</code> file or a CSV export should be read, and adds what was measured on real files.
-For the procedure in full, with the screens, the original manual is the reference.</p>
+<h1>Horiba SZ-100: size measurements</h1>
+<p class="lead">Measurement settings, meaning of the reported quantities, forms of distribution, recalculation, and the corresponding
+functions of DLSManager. The complete operating procedure, with screenshots, is given in HORIBA's <i>Quick Start: Making a Size
+Measurement</i> (December 2011).</p>
 
-<h2 id="standard">1. A latex check standard</h2>
-<p>A nominal 100 nm polystyrene latex is the usual check of the instrument. The salt solution (10 mM NaCl, or another 1:1
-electrolyte, in deionised water) is passed through a 0.1 or 0.2 µm filter first, to take out dust. The stock suspension is about 1%
-v/v: the bottle is mixed, its tip is checked, one drop is discarded, and one drop (about 30 µL) goes into 10 mL of the filtered salt
-solution, which is capped and swirled gently. A suspension in which particles are visible is discarded. One to two millilitres go
-into a clean square cell (1 mL is the minimum).</p>
-
-<h2 id="setup">2. Settings of a size measurement</h2>
+<h2 id="standard">1. Latex check standard</h2>
+<p>The instrument is usually checked with a nominal 100 nm polystyrene latex.</p>
 <ul>
-<li><b>Temperature.</b> The temperature control is switched on and set to the measurement temperature (25 °C is usual); the sample then needs a few minutes to equilibrate, which is the time to set up the measurement.</li>
-<li><b>Sample.</b> Particle: mono-polystyrene (the factory default) for a latex; dispersion medium: water, or the right medium from
-the list. The viscosity and the refractive index of the medium must be correct: they enter the size.</li>
-<li><b>Measurement.</b> General mode; manual scan of 120 s; 3 consecutive measurements with no delay. The detector position is set
-to manual at 90° (the other choice is 173°, backscattering); the ND filter is automatic.</li>
-<li><b>Cell.</b> The cuvette type is recorded with the measurement and is not used in the analysis.</li>
-<li><b>Calculation.</b> Monodisperse and Standard are the recommended choices for a latex (section 4); the result is calculated on
-the scattered light intensity (section 5).</li>
-<li><b>Saving.</b> Automatic saving after each measurement, with the sample name and sequential numbers. A sample name with a
-character that Windows does not allow in a file name (<code>\ / : * ? " &lt; &gt; |</code>) is not saved.</li>
+<li><b>Dispersion medium.</b> 10 mM NaCl (or another 1:1 electrolyte) in deionised water, filtered through a 0.1 or 0.2 µm membrane to
+remove dust.</li>
+<li><b>Dilution.</b> One drop (about 30 µL) of the 1% v/v stock suspension in 10 mL of filtered medium. The stock bottle is mixed
+beforehand, its tip checked and the first drop discarded. The dilution is capped and swirled gently.</li>
+<li><b>Inspection.</b> A suspension with visible particles is discarded.</li>
+<li><b>Cell.</b> 1 to 2 mL in a clean square cell (minimum volume 1 mL).</li>
+</ul>
+
+<h2 id="setup">2. Measurement settings</h2>
+<ul>
+<li><b>Temperature.</b> Temperature control on, set to the measurement temperature (usually 25 °C). The sample is allowed a few minutes
+to equilibrate.</li>
+<li><b>Sample.</b> Particle material (mono-polystyrene, the default, for a latex) and dispersion medium. The viscosity and refractive
+index of the medium enter the calculated size and must be correct.</li>
+<li><b>Measurement.</b> General mode, manual scan of 120 s, 3 consecutive measurements without delay. Detector position 90° or 173°
+(backscattering); automatic ND filter.</li>
+<li><b>Cell.</b> The cuvette type is recorded with the measurement and does not enter the analysis.</li>
+<li><b>Calculation.</b> Monodisperse and Standard are recommended for a latex (section 4); the result is calculated on the scattered
+light intensity (section 5).</li>
+<li><b>Saving.</b> Automatic saving after each measurement, with sample name and sequential number. A sample name containing a
+character not allowed in Windows file names (<code>\ / : * ? " &lt; &gt; |</code>) is not saved.</li>
 </ul>
 
 <h2 id="quantities">3. Quantities: where they come from</h2>
-<p>A measurement yields <b>one</b> measured curve, the correlogram. Every other number is calculated from it, from conditions that
-are typed in, or from a sensor. The numbers that look alike come from different calculations, and it matters which.</p>
+<p>A DLS measurement records a single curve, the correlogram. All other results are calculated from it, using the measurement
+conditions.</p>
 <table>
-<tr><th>Group</th><th>Quantities</th><th>Where they come from</th></tr>
-<tr><td>Measured</td><td>Correlogram g2(τ) − 1 (43 channels, 0.1 µs to about 0.1 s)</td><td>The correlator</td></tr>
-<tr><td>Measured</td><td>Count rate; transmitted intensity before and after; temperature of the holder</td><td>The detector and the sensors</td></tr>
-<tr><td>Entered</td><td>Angle (90° or 173°), wavelength (532 nm), viscosity and refractive index of the medium, refractive index of the particle, form of
-distribution, channel ranges</td><td>The measurement conditions; they enter every size</td></tr>
-<tr><td>Cumulants</td><td>Z-average, PI, <i>Cumulants S.D.</i></td><td>A fit of the decay of the correlogram at short delays</td></tr>
-<tr><td>Histogram</td><td>The size table, its Mean, S.D., Mode, median, D10/D50/D90, span, fit and residuals</td><td>An inversion of the correlogram under the chosen form
-(section 4)</td></tr>
-<tr><td>Conversions</td><td>Volume and number distributions</td><td>The intensity histogram divided by the light one particle scatters (Mie or d⁶), weighted by d³ for
-volume</td></tr>
+<tr><th>Group</th><th>Quantities</th><th>Origin</th></tr>
+<tr><td>Measured</td><td>Correlogram g2(τ) − 1 (43 channels, 0.1 µs to about 0.1 s)</td><td>Correlator</td></tr>
+<tr><td>Measured</td><td>Count rate, transmitted intensity before and after, holder temperature</td><td>Detector and sensors</td></tr>
+<tr><td>Entered</td><td>Scattering angle (90° or 173°), wavelength (532 nm), viscosity and refractive index of the medium, refractive index of the
+particle, form of distribution, channel ranges</td><td>Measurement conditions</td></tr>
+<tr><td>Cumulants</td><td>Z-average, PI, <i>Cumulants S.D.</i></td><td>Fit of the initial decay of the correlogram</td></tr>
+<tr><td>Histogram</td><td>Size table, Mean, S.D., Mode, median, D10/D50/D90, span, fit and residuals</td><td>Inversion of the correlogram under the
+chosen form of distribution (section 4)</td></tr>
+<tr><td>Conversions</td><td>Volume and number distributions</td><td>Intensity histogram divided by the light scattered by one particle (Mie or
+d⁶), weighted by d³ for volume</td></tr>
 </table>
-<h3>The cumulants</h3>
-<p>The decay rate of the correlogram gives the diffusion coefficient D = Γ/q², with q the scattering vector, and the size follows from
-the Stokes–Einstein relation d = kT / (3πηD). The <b>Z-average</b> is the mean size obtained this way, weighted by the scattered
-intensity; the <b>PI</b> is the relative width of the decay rates. The <b>Cumulants S.D.</b> is not a separate result: it equals
-Z-average × √PI, exactly.</p>
-<h3>The histogram</h3>
-<p>Mean, S.D., Mode and the percentiles are the statistics of the plotted table, calculated like those of any table. Its width is set
-by the form (section 4), not by the PI: the S.D. of the histogram is about a quarter of its mean whatever the sample, while the
-Cumulants S.D. follows the PI. Its position stays near the Z-average, a little above it, and further above it for a broad sample; the rule that places it is not
-known.</p>
-<div class="note">Two standard deviations are therefore printed: the one of the cumulants (from the PI, a measurement of the width of the
-decay) and the one of the histogram (from the form, an assumption). For polydispersity the PI and the Cumulants S.D. are the
-quantities to read. A width taken from the PI instead of the form (σ = √PI) was tried: it does not approach the instrument's volume
-and number, nor the true size of a latex standard, better than the Standard form.</div>
+<h3>Cumulants</h3>
+<p>The decay rate Γ of the correlogram gives the diffusion coefficient D = Γ/q², where q is the scattering vector; the size follows from
+the Stokes–Einstein relation d = kT / (3πηD).</p>
+<ul>
+<li><b>Z-average:</b> intensity-weighted mean size.</li>
+<li><b>PI</b> (polydispersity index): relative width of the distribution of decay rates.</li>
+<li><b>Cumulants S.D.:</b> Z-average × √PI. It is not an independent result.</li>
+</ul>
+<h3>Histogram</h3>
+<p>Mean, S.D., Mode and percentiles are the statistics of the size table. The width of the histogram is set by the form of distribution
+(section 4) and not by the PI: in the Monodisperse Standard form the S.D. is about one quarter of the mean for any sample. The peak lies
+close to the Z-average, generally slightly above it, and further above it for broad samples.</p>
+<div class="note">Two standard deviations are therefore reported. The Cumulants S.D. derives from the PI and reflects the measured
+decay; the histogram S.D. derives from the form of distribution and is an assumption. Polydispersity is to be judged from the PI and the
+Cumulants S.D.</div>
 
 <h3>The recomputed distribution and its S.D.</h3>
-<p>The source <i>Recomputed</i> of DLSManager inverts the stored correlogram itself, without the instrument's forms. Its mean and S.D.
-are those of the table of the distribution: with weights <i>p</i> on a grid of 100 diameters <i>d</i> equally spaced in ln d from 10 to
-3000 nm, the mean is Σ(d·p) / Σp and the S.D. is √[ Σ p·(d − mean)² / Σp ], in nm. They are given in the weighting chosen (intensity,
-volume or number), after the width chosen in <i>Width</i> and the tail cut; for the models of one or two peaks they are those of the sum
-of the peaks on the grid.</p>
-<p>The width of this distribution is the one the data allow: it follows the PI closely (the relative S.D., S.D./mean, is nearly proportional to √PI of the
-program's own cumulants, less so to the instrument's), but it is not tied to it by a formula. The regularised inversion tends to widen
-a narrow sample, so its S.D. is usually a little above √PI × mean. The instrument's histogram in the Monodisperse Standard form has
-instead a relative S.D. of about a quarter whatever the PI, so the two S.D. printed under a plot can differ noticeably: choosing <i>Width</i> = Standard sets the
-recomputed one to the instrument's width. The program does not recompute the cumulants' S.D.; it is only shown for the instrument
-(<i>Parameters</i> tab).</p>
+<p>The <i>Recomputed</i> source of DLSManager inverts the stored correlogram without imposing a form of distribution. The weights
+<i>p</i> are obtained on 100 diameters <i>d</i>, equally spaced in ln d from 10 to 3000 nm:</p>
+<ul>
+<li>mean = Σ(d·p) / Σp;</li>
+<li>S.D. = √[ Σ p·(d − mean)² / Σp ].</li>
+</ul>
+<p>Both refer to the selected weighting (intensity, volume or number), after the selected <i>Width</i> and tail cut. For the models with
+one or two peaks they refer to the sum of the peaks.</p>
+<p>The width of the recomputed distribution follows the PI closely, although no formula links the two. The regularised inversion tends
+to broaden narrow samples, so that its S.D. is usually slightly larger than √PI × mean. It can differ considerably from the S.D. of the
+instrument's histogram, whose width is fixed; <i>Width</i> = Standard sets the recomputed distribution to the instrument's width. The
+Cumulants S.D. is reported for the instrument's results only (<i>Parameters</i> tab).</p>
 
 <h2 id="forms">4. Forms of distribution</h2>
-<p>The size distribution is not a free inversion of the correlogram: the software computes it under a <i>form</i> chosen by the
-user, which fixes the width of what it shows. The form has two parts, and the result can be recalculated later with another one
-(section 6).</p>
+<p>The instrument software calculates the size distribution under a <i>form of distribution</i> chosen by the operator, which fixes the
+width of the reported peaks. A stored measurement can be recalculated with another form (section 6). The form has two parts:</p>
 <ul>
-<li><b>Dispersity:</b> <i>Monodisperse</i> (one peak) or <i>Polydisperse</i> (the software may show several peaks).</li>
-<li><b>Width:</b> <i>Broad</i> (for wide distributions), <i>Standard</i> (general use), <i>Narrow</i> (narrow samples, such as a
-polystyrene latex standard) or <i>Manual</i>, a <i>resolution</i> from −1 to 1 typed by the user.</li>
+<li><b>Dispersity:</b> <i>Monodisperse</i> (one peak) or <i>Polydisperse</i> (one or more peaks).</li>
+<li><b>Width:</b> <i>Broad</i> (wide distributions), <i>Standard</i> (general use), <i>Narrow</i> (very narrow samples) or
+<i>Manual</i> (a <i>resolution</i> from −1 to 1).</li>
 </ul>
 <table>
-<tr><th>Resolution (manual)</th><th class="n">Broad</th><th class="n">Standard</th><th class="n">Narrow</th></tr>
+<tr><th>Resolution</th><th class="n">Broad</th><th class="n">Standard</th><th class="n">Narrow</th></tr>
 <tr><td>Monodisperse</td><td class="n">−0.5</td><td class="n">0.3</td><td class="n">0.6</td></tr>
 <tr><td>Polydisperse</td><td class="n">−0.3</td><td class="n">0.1</td><td class="n">0.3</td></tr>
 </table>
-<p>Measured on size tables that the software recalculated from the same correlograms, the resolution sets the <b>width of the
-peak</b> (σ of ln d), whatever the sample:</p>
+<p>The resolution determines the peak width, expressed as the standard deviation σ of ln d. Approximate values:</p>
 <table>
-<tr><th>Form</th><th class="n">resolution</th><th class="n">σ of ln d</th></tr>
+<tr><th>Form</th><th class="n">Resolution</th><th class="n">σ of ln d</th></tr>
 <tr><td>Monodisperse, Broad</td><td class="n">−0.5</td><td class="n">0.42–0.45</td></tr>
 <tr><td>Polydisperse, Standard</td><td class="n">0.1</td><td class="n">0.24–0.30</td></tr>
 <tr><td>Monodisperse, Standard</td><td class="n">0.3</td><td class="n">0.23–0.25</td></tr>
 <tr><td>Monodisperse, Narrow</td><td class="n">0.6</td><td class="n">0.07</td></tr>
 </table>
-<p>The fit of the correlogram is equally good in all of them (residual about 10⁻³), so the data do not choose the width: a narrow
-or a broad form is an assumption about the sample, and the width shown says nothing about its polydispersity. In the Polydisperse
-form a broad or bimodal sample (a high PI) can give two peaks, where the Monodisperse form always gives one.</p>
-<p>The <code>.nsz</code> files store the resolution used as <code>Dist_Resolution</code>: 0.3 is Monodisperse
-Standard, the usual choice.</p>
+<p>The correlogram is fitted about equally well with each of these widths: the data do not determine which one applies. A broad or
+bimodal sample (high PI) can give two peaks in the Polydisperse form, whereas the Monodisperse form always gives one.</p>
+<p>The <code>.nsz</code> file stores the resolution of the measurement as <code>Dist_Resolution</code> (0.3: Monodisperse
+Standard).</p>
 
 <h2 id="advanced">5. Advanced calculation options</h2>
 <ul>
-<li><b>Representation of the result:</b> scattered light intensity (the one a measurement is made in), volume or number. Volume and
-number can be converted with the Rayleigh approximation or with Mie theory (the plain or an <i>averaged</i> Mie); the Rayleigh
-conversion is meant for particles of about 100 nm or less.</li>
+<li><b>Representation of the result:</b> scattered light intensity (primary result), volume or number. Volume and number are converted
+with the Rayleigh approximation or with Mie theory (<i>Mie</i> or <i>Averaged Mie</i>). The Rayleigh approximation is suited to
+particles up to about 100 nm.</li>
 <li><b>Threshold q:</b> 5% by default.</li>
 <li><b>Calculation range:</b> 0.15 to 4000 nm (radius).</li>
-<li><b>Channels of the correlation function:</b> automatic for the histogram and for the cumulants, or a chosen range
-(1–41 here). The cumulant range is printed in the exports.</li>
-<li><b>Particles outside the measurement range:</b> their influence is eliminated by default.</li>
+<li><b>Correlation channels:</b> automatic or user-defined ranges for the histogram and for the cumulants. The cumulant range is
+reported in the exports.</li>
+<li><b>Particles outside the measurement range:</b> their contribution is removed by default.</li>
 </ul>
 
-<h2 id="recalc">6. Recalculation and the CSV export</h2>
-<p>The software recalculates a stored measurement from <i>Edit → Recalculate</i>, with another form or another basis. The
-correlogram does not change: a recalculation produces <b>only a CSV</b> with the new distribution and its fit, not a new
-<code>.nsz</code>. Z-average, PI, the cumulants' S.D. and the count rate are the same as in the original measurement.</p>
-<p>The CSV holds, in order: the settings (angle, medium, refractive indices, form of distribution and dispersity, representation of
-the result, count rate); the results (area, mean, S.D. and mode of each peak, Z-average, PI, cumulant range); the size table (84
-bins with frequency and undersize); the residual of the fit; and the correlation function with the fit.</p>
-<p>The form used by a recalculation is named only in this CSV (<i>Distribution Form</i> and <i>Distribution Form(Dispersity)</i>
-in its header). DLSManager opens these CSV files like a <code>.nsz</code>: the correlation with its fit, the size table, the results
-and the form are shown. The raw correlogram is not in the CSV, so the <i>Recomputed</i> source is not available for it.</p>
-<div class="note">The diameters of the size table are the <b>upper edges</b> of the bins (the bin ratio is 1.1298): the mean stated by
-the software equals the mean computed from the table divided by √1.1298, so its stated mean and mode sit about
-6% below the peak drawn from the table.</div>
+<h2 id="recalc">6. Recalculation and CSV export</h2>
+<p>A stored measurement is recalculated from <i>Edit → Recalculate</i> with another form or representation. The correlogram, Z-average,
+PI, Cumulants S.D. and count rate are unchanged. The recalculation produces <b>a CSV file only</b>; no new <code>.nsz</code> file is
+written.</p>
+<p>Contents of the CSV file:</p>
+<ul>
+<li>settings: angle, medium, refractive indices, form of distribution and dispersity, representation, count rate;</li>
+<li>results: area, mean, S.D. and mode of each peak, Z-average, PI, cumulant range;</li>
+<li>size table: 84 bins with frequency and undersize;</li>
+<li>fit residuals, correlation function and fit.</li>
+</ul>
+<p>The form used for a recalculation is recorded only in the CSV header (<i>Distribution Form</i> and <i>Distribution
+Form(Dispersity)</i>). DLSManager opens these files like <code>.nsz</code> files and shows correlation, fit, size table, results and
+form. The <i>Recomputed</i> source is not available for them, because the CSV does not contain the raw correlogram.</p>
+<div class="note">The diameters of the size table are the <b>upper edges</b> of the bins (bin ratio 1.1298). The mean and mode stated by
+the software refer to the bin centres and are about 6% lower than the values read from the plotted table.</div>
 
-<h2 id="dlsmanager">7. What DLSManager does with them</h2>
+<h2 id="dlsmanager">7. Functions of DLSManager</h2>
 <table>
-<tr><th>Instrument</th><th>DLSManager</th></tr>
-<tr><td>Replicate measurements</td><td><i>Average selected</i>: the mean of two or more measurements made under the same conditions and form of
-distribution. Correlogram, size table and fit are averaged point by point; each result is the mean of the measurements' values, shown
-with their standard deviation. <i>Recomputed</i> inverts the averaged correlogram. Saved files go by default to the folder of the data</td></tr>
-<tr><td>Recalculation (CSV export)</td><td>Opened like a <code>.nsz</code>, with the form read from its header</td></tr>
-<tr><td>Distribution stored in the file (the form of the measurement)</td><td>Source <i>Instrument</i>: the table as stored, intensity, volume and
-number by the chosen conversion</td></tr>
-<tr><td>Z-average and PI</td><td>Cumulants of the stored correlogram, shown next to the instrument's</td></tr>
-<tr><td>Forms Broad / Standard / Narrow</td><td>Choice <i>Width</i> of the source <i>Recomputed</i>: the free distribution is given the
-peak width σ of ln d = 0.43 / 0.24 / 0.07; <i>As computed</i> leaves it as the inversion gives it; <i>Manual</i> takes a resolution
-from −1 to 1</td></tr>
-<tr><td>Polydisperse (several peaks)</td><td>The models of one and two log-normal peaks, with the BIC that says whether a second peak is
-supported</td></tr>
-<tr><td>Averaged Mie</td><td>The <i>Aperture</i> entry averages the Mie intensity over an angle range (the instrument's range is not
-given)</td></tr>
+<tr><th>Subject</th><th>Function</th></tr>
+<tr><td>Distribution stored in the file</td><td>Source <i>Instrument</i>: the stored intensity table, with volume and number by the selected
+conversion</td></tr>
+<tr><td>Z-average and PI</td><td>Cumulants of the stored correlogram, shown beside the instrument's values</td></tr>
+<tr><td>Broad, Standard and Narrow forms</td><td>Source <i>Recomputed</i>, control <i>Width</i>: peak width σ of ln d = 0.43, 0.24 or 0.07.
+<i>As computed</i> leaves the result of the inversion; <i>Manual</i> takes a resolution from −1 to 1, interpolated between the values of
+section 4</td></tr>
+<tr><td>Polydisperse form</td><td>Models with one or two log-normal peaks; the BIC indicates whether a second peak is supported</td></tr>
+<tr><td>Averaged Mie</td><td><i>Aperture</i> averages the Mie intensity over the given angular range (0: single angle)</td></tr>
+<tr><td>Recalculation</td><td>CSV files are opened directly, with the form read from the header</td></tr>
+<tr><td>Replicate measurements</td><td><i>Average selected</i>: mean of two or more measurements with the same conditions and form.
+Correlogram, size table and fit are averaged point by point; each result is given as mean ± standard deviation of the measurements;
+<i>Recomputed</i> inverts the averaged correlogram</td></tr>
+<tr><td>Saving</td><td>Save dialogs open in the folder of the data files</td></tr>
 </table>
 
-<h2 id="limits">8. What is verified</h2>
+<h2 id="limits">8. Interpretation of results</h2>
 <ul>
-<li>The widths of the forms, the presets of the manual and the two-peak result were measured on size tables that the software recalculated
-from stored correlograms (a latex standard and liposomes) and on the instrument's dialogs; the map from resolution to width (the <i>Manual</i> choice) is an interpolation
-through four points.</li>
-<li>Not known: the algorithm behind the forms, and which fields of the <code>.nsz</code> a recalculation would change (it does not
-write one).</li>
-<li>The widths are properties of the instrument's presets, not measurements of the sample: for polydispersity, the PI and the
-correlogram itself are the quantities to look at.</li>
+<li>Z-average and PI are the quantities that depend least on assumptions about the sample.</li>
+<li>The width of the instrument's histogram is a property of the selected form, not a measurement of the sample.</li>
+<li>Volume and number distributions depend strongly on the width of the intensity distribution and on the refractive index of the
+particle; they are to be regarded as indicative.</li>
+<li>Values obtained with different forms of distribution are not directly comparable: the form is to be stated with the results.</li>
 </ul>
 </main>
 </div>

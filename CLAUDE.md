@@ -28,7 +28,9 @@ without it. The three `screenshot*.png` are the real program with the 0843 file 
 Guide (2026-11-23): `docs/sz100_guide.html` (own words, no screenshots, no text of Horiba's manual: the manual is copyrighted and this repository is
 public) opened by Help > 'SZ-100 settings and recalculation (guide)' (`open_guide()`, `DLSManager.GUIDE`; since 2026-11-24 shown in a program window, `GuideWindow`, which reads the HTML with `_GuideParser` (headings, paragraphs, lists, tables, bold/italic/code): short tables are aligned in a monospaced font, tables with long cells are written one row at a time; no browser, no extra package). A faithful hypertext and a clean PDF of the
 scanned manual exist only in the unpublished folder `DLSManager/SZ100Manual/` (moved there on 2026-11-23; listed in `.gitignore`: never commit or push it). The guide's facts: the instrument's forms and resolution
-presets, the measured widths, the recalculation (CSV only), the bin edges; update it when those change.
+presets, the measured widths, the recalculation (CSV only), the bin edges; update it when those change. Tone (rewritten 2026-11-27 after
+Francesco rejected the earlier text as unprofessional): a manual in formal impersonal prose; no "written for / in its own words / measured on
+real files", no development history, no "what is verified / not known" section, no test files or counts: evidence stays in this file.
 
 Icon (2026-11-21): `DLSManager.ico` (16, 24, 32, 48, 64 px, classic BMP frames) is drawn by `examples/make_icon.py` in the style of
 `SpectrumDigitizer.ico` / `plot_editor.ico` (white rounded tile, black axes, orange and blue curves): the correlation decay with its
